@@ -1,0 +1,1 @@
+# https://github.com/dongjin-ml/text2sql/blob/main/lab1_text2sql_s3_athena_pyspark/1.basic-athena.ipynb
