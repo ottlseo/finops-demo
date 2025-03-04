@@ -24,7 +24,6 @@ def get_dataset():
 
     return df, column_info
     
-
 # set bedrock
 def get_bedrock_model():
 
@@ -123,7 +122,7 @@ def display_chat_history():
                     if node_name == "chart_generation" and assistant[node_name] != "None": st.image(assistant[node_name])
                     else: st.write(assistant[node_name])
             
-
+            
 ####################### Initialization ###############################
 df, column_info = get_dataset()
 llm_sonnet, llm_haiku = get_bedrock_model()
@@ -166,7 +165,7 @@ st.markdown('''
             ''')
 
 if len(st.session_state["messages"]) > 0: display_chat_history()
-    
+
 if user_input := st.chat_input(): # block below will begin when user inputs their ask in contatiner
     
     st.chat_message("user").write(user_input)
@@ -183,12 +182,18 @@ if user_input := st.chat_input(): # block below will begin when user inputs thei
     }
     
     with st.chat_message("assistant"):
-        with st.spinner(f'Thinking...'):
-            st_callback = get_streamlit_cb(st.container())
-            st.session_state["tabs"] = tabs
-            st.session_state["analyzer"].invoke(
-                ask=user_input,
-                st_callback=st_callback
-            )
-            st.write("Done")
-
+        st_callback = get_streamlit_cb(st.container())
+        st.session_state["tabs"] = tabs
+        st.session_state["analyzer"].invoke(
+            ask=user_input,
+            st_callback=st_callback
+        )
+        
+    # with st.chat_message("assistant"):
+    #     st_callback = get_streamlit_cb(sections)
+    #     st.session_state["sections"] = sections
+    #     st.session_state["analyzer"].invoke(
+    #         ask=user_input,
+    #         st_callback=st_callback
+    #     )
+    #     st.write("Done")

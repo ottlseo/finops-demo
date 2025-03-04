@@ -213,12 +213,12 @@ class genai_analyzer():
                 
                 <output_format>
                 결정에 따라 다음 중 하나를 출력하세요. 반드시 아래 2개중 1개를 선택합니다.:
-                1. "GENERATE_CHART (간단한 이유)" - 차트 생성이 필요한 경우
-                2. "END (간단한 이유)" - 차트 생성이 할 수 없거나 대화를 종료해야 하는 경우
+                1. "GENERATE_CHART (간단한 이유 설명)" - 차트 생성이 필요한 경우
+                2. "END (간단한 이유 설명)" - 차트 생성을 할 수 없거나 대화를 종료해야 하는 경우
                 
                 예시:
-                GENERATE_CHART (사용자가 연간 수익 추이 그래프 요청)
-                END (단순한 날씨 질문으로 차트 불필요)
+                GENERATE_CHART (연간 수익 추이 그래프를 요청하셨습니다.)
+                END (단순한 날씨 질문으로 차트 생성이 필요하지 않습니다.)
                 </output_format>
 
                 This is the result of `print(df.head())`: <dataset>{dataset}</dataset>
