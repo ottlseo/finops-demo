@@ -2,7 +2,6 @@ import streamlit as st
 import boto3
 import json
 import copy
-import pprint
 from typing import TypedDict
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -11,7 +10,7 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 from langchain_core.runnables import RunnableConfig
-import utils.ddb as ddb
+# import src.ddb as ddb
 from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
 from src.common_utils import SQLDatabase
 
@@ -20,7 +19,7 @@ st.title("FinOps Demo w/ Text2Sql 💸")
 st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
 
 boto_session = boto3.Session()
-region_name = "us-west-2" #boto_session.region_name
+region_name = boto_session.region_name
 
 llm_model = "anthropic.claude-3-5-haiku-20241022-v1:0" # TODO: change to Nova
 llm_model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
@@ -48,7 +47,6 @@ class GraphState(TypedDict):
     answer: str
     dialect: str
     
-
 def converse_with_bedrock(sys_prompt, usr_prompt):
     temperature = 0.0
     top_p = 0.1
@@ -552,31 +550,139 @@ def build_langgraph_workflow():
     app = workflow.compile(checkpointer=memory)
     return app
 
-def print_graph_results(app, query="What are the top 10 countries by sales in 2022?"):
+def print_graph_results(app, query: str):
     config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
     inputs = GraphState(question=query)
 
-    pp = pprint.PrettyPrinter(width=200, compact=True)
+    # 어시스턴트 응답
+    with st.chat_message("assistant"):
+        # 진행 상황 컨테이너
+        progress_container = st.container()
+        
+        # 최종 응답 컨테이너
+        response_container = st.container()
+        
+        try:
+            current_node = None
+            for output in app.stream(inputs, config=config):
+                for key, value in output.items():
+                    # 새로운 노드 처리 시작
+                    if current_node != key:
+                        current_node = key
+                        with progress_container:
+                            if key == "analyze_intent":
+                                st.info("🤔 Analyzing your question...")
+                            elif key == "get_sample_queries":
+                                st.info("🔍 Finding similar queries...")
+                            elif key == "generate_query":
+                                st.info("⚙️ Generating SQL query...")
+                            elif key == "execute_query":
+                                st.info("🚀 Executing query...")
+                            elif key == "generate_answer":
+                                st.info("📝 Preparing response...")
+                    
+                    # 최종 답변 처리
+                    if 'answer' in value:
+                        with response_container:
+                            st.markdown(value['answer'])
+                            # 답변을 세션에 저장
+                            st.session_state.messages.append(
+                                {"role": "assistant", "content": value['answer']}
+                            )
+            # 진행 상황 컨테이너 정리
+            progress_container.empty()
+            
+        except GraphRecursionError as e:
+            st.error(f"⚠️ I encountered an error: {str(e)}")
+            st.session_state.messages.append(
+                {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
+            )
 
-    try:
-        for output in app.stream(inputs, config=config):
-            for key, value in output.items():
-                print(f"\n🔹 [NODE] {key}")
-                print("=" * 80)
-                for k, v in value.items():
-                    print(f"📌 {k}:")
-                    pp.pprint(v)
-                print("=" * 80)
-    except GraphRecursionError as e:
-        print(f"⚠️ Recursion limit reached: {e}")
+def print_graph_results_with_details(app, query: str):
+    config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
+    inputs = GraphState(question=query)
 
+    with st.chat_message("assistant"):
+        # 진행 상황 컨테이너
+        progress_container = st.container()
+        
+        # 최종 응답 컨테이너
+        response_container = st.container()
+        
+        try:
+            current_node = None
+            node_results = {}  # 각 노드의 결과를 저장
+            
+            for output in app.stream(inputs, config=config):
+                for key, value in output.items():
+                    # 새로운 노드 처리 시작
+                    if current_node != key:
+                        current_node = key
+                        with progress_container:
+                            for node, (icon, title, result) in node_results.items(): # 이전 결과들 모두 표시
+                                with st.expander(f"{icon} {title}", expanded=False):
+                                    if isinstance(result, dict):
+                                        for k, v in result.items():
+                                            st.markdown(f"**{k}:**")
+                                            st.code(str(v))
+                                    else:
+                                        st.code(str(result))
+                            
+                            # 현재 진행 중인 노드 표시
+                            if key == "analyze_intent":
+                                st.info("🤔 Analyzing your question...")
+                                node_results[key] = ("🤔", "Question Analysis", value)
+                            elif key == "get_sample_queries":
+                                st.info("🔍 Finding similar queries...")
+                                formatted_queries = "\n\n".join([
+                                    f"Query: {q['query']}\nContext: {q['input']}"
+                                    for q in value.get('sample_queries', [])
+                                ])
+                                node_results[key] = ("🔍", "Similar Queries", formatted_queries)
+                            elif key == "generate_query":
+                                st.info("⚙️ Generating SQL query...")
+                                node_results[key] = ("⚙️", "Generated SQL Query", 
+                                                   value.get('query_state', {}).get('query', ''))
+                            elif key == "execute_query":
+                                st.info("🚀 Executing query...")
+                                node_results[key] = ("🚀", "Query Execution Results", 
+                                                   value.get('query_state', {}))
+                            elif key == "generate_answer":
+                                st.info("📝 Preparing response...")
+                                node_results[key] = ("📝", "Final Response", value)
+                                
+                    if 'answer' in value:
+                        with response_container:
+                            st.markdown(value['answer'])
+                            # 답변을 세션에 저장
+                            st.session_state.messages.append(
+                                {"role": "assistant", "content": value['answer']}
+                            )
+                    
+            # 최종 결과 표시
+            with progress_container:
+                st.markdown("### 🔍 Execution Details")
+                for node, (icon, title, result) in node_results.items():
+                    with st.expander(f"{icon} {title}", expanded=False):
+                        if isinstance(result, dict):
+                            for k, v in result.items():
+                                st.markdown(f"**{k}:**")
+                                st.code(str(v))
+                        else:
+                            st.code(str(result))
+            
+        except GraphRecursionError as e:
+            st.error(f"⚠️ I encountered an error: {str(e)}")
+            st.session_state.messages.append(
+                {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
+            )
 
-################## import functions ##################
-normalizer = ddb.ServiceNameNormalizer()
+################## setting ##################
 
 boto3_client = init_boto3_client(region_name)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
 app = build_langgraph_workflow()
+# normalizer = ddb.ServiceNameNormalizer()
 
 ################## chatbot ui ##################
 if "messages" not in st.session_state:
@@ -587,7 +693,7 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-# 유저가 쓴 chat을 query라는 변수에 담음
+# 유저가 쓴 chat을 query 변수에 담음
 query = st.chat_input("Search documentation")
 if query:
     # Session에 메세지 저장
@@ -597,16 +703,10 @@ if query:
     st.chat_message("user").write(query)
 
     # query = normalizer.process_text(query)
-    st.chat_message("assistant").write(query)
-
-    # sql_search_result = sql_retriever.vector_search(query)
-    # table_search_result = table_retriever.vector_search(query)
+    # st.chat_message("assistant").write(query)
 
     print_graph_results(app, query=query)
 
-    st.chat_message("assistant").write("sql_search_result")
-    # st.chat_message("assistant").write(table_search_result)
-
     # Session 메세지 저장
-    st.session_state.messages.append({"role": "assistant", "content": "sql_search_result"})
+    # st.session_state.messages.append({"role": "assistant", "content": graph_results})
         
