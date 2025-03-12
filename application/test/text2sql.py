@@ -1,26 +1,15 @@
-import streamlit as st 
 import boto3
 import json
 import copy
-import pprint
 from typing import TypedDict
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
-from langgraph.graph import END, StateGraph
-from langgraph.checkpoint.memory import MemorySaver
-from langgraph.errors import GraphRecursionError
-from langchain_core.runnables import RunnableConfig
-import utils.ddb as ddb
 from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
 from src.common_utils import SQLDatabase
 
-st.set_page_config(layout="wide")
-st.title("FinOps Demo w/ Text2Sql 💸") 
-st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
-
 boto_session = boto3.Session()
-region_name = "us-west-2" #boto_session.region_name
+region_name = boto_session.region_name
 
 llm_model = "anthropic.claude-3-5-haiku-20241022-v1:0" # TODO: change to Nova
 llm_model = "anthropic.claude-3-5-sonnet-20241022-v2:0"
@@ -33,7 +22,6 @@ db = SQLDatabase(engine)
 DIALECT = "sqlite"
 Session = sessionmaker(bind=engine)
 
-################## graph functions ##################
 
 class GraphState(TypedDict):
     question: str  
@@ -469,144 +457,5 @@ def get_database_answer(state: GraphState) -> GraphState:
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
     return GraphState(answer=answer)
 
-def build_langgraph_workflow():
-    workflow = StateGraph(GraphState)
 
-    # Global Nodes
-    workflow.add_node("analyze_intent", analyze_intent)
-    workflow.add_node("get_general_answer", get_general_answer)
-    workflow.add_node("get_database_answer", get_database_answer)
-    workflow.set_entry_point("analyze_intent")
-
-    # SubGraph1 Nodes - Schema Linking
-    workflow.add_node("get_sample_queries", get_sample_queries)
-    workflow.add_node("check_readiness", check_readiness)
-    workflow.add_node("get_relevant_tables", get_relevant_tables)
-    workflow.add_node("describe_schema", describe_schema)
-
-    # SubGraph2 Nodes - Query Generation & Execution
-    workflow.add_node("generate_query", generate_query)
-    workflow.add_node("validate_query", validate_query)
-    workflow.add_node("execute_query", execute_query)
-    workflow.add_node("handle_failure", handle_failure)
-    workflow.add_node("get_relevant_columns", get_relevant_columns)
-
-    # Edge from Entry to SubGraph1
-    workflow.add_conditional_edges(
-        "analyze_intent",
-        next_step_by_intent,
-        {
-            "database": "get_sample_queries",
-            "general": "get_general_answer",
-        }
-    )
-
-    # Edges in SubGraph1
-    workflow.add_edge("get_sample_queries", "check_readiness")
-    workflow.add_conditional_edges(
-        "check_readiness"    ,
-        next_step_by_readiness,
-        {
-            "Ready": "generate_query",
-            "Not Ready": "get_relevant_tables"
-        }
-    )
-    workflow.add_edge("get_relevant_tables", "describe_schema")
-    workflow.add_edge("describe_schema", "check_readiness")
-
-    # Edges in SubGraph2
-    workflow.add_edge("generate_query", "validate_query")
-    workflow.add_conditional_edges(
-        "validate_query"    ,
-        next_step_by_query_state,
-        {
-            "success": "execute_query",
-            "error": "handle_failure"
-        }
-    )
-    workflow.add_conditional_edges(
-        "execute_query"    ,
-        next_step_by_query_state,
-        {
-            "success": "get_database_answer",
-            "error": "handle_failure"
-        }
-    )
-    workflow.add_conditional_edges(
-        "handle_failure"    ,
-        next_step_by_next_action,
-        {
-            "schema_check": "get_relevant_columns",
-            "syntax_check": "generate_query",
-            "retry": "validate_query",
-            "stop": "get_database_answer"
-        }
-    )
-    workflow.add_edge("get_relevant_columns", "generate_query")
-
-    # Edges to END
-    workflow.add_edge("get_general_answer", END)
-    workflow.add_edge("get_database_answer", END)
-
-    memory = MemorySaver()
-    app = workflow.compile(checkpointer=memory)
-    return app
-
-def print_graph_results(app, query="What are the top 10 countries by sales in 2022?"):
-    config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
-    inputs = GraphState(question=query)
-
-    pp = pprint.PrettyPrinter(width=200, compact=True)
-
-    try:
-        for output in app.stream(inputs, config=config):
-            for key, value in output.items():
-                print(f"\n🔹 [NODE] {key}")
-                print("=" * 80)
-                for k, v in value.items():
-                    print(f"📌 {k}:")
-                    pp.pprint(v)
-                print("=" * 80)
-    except GraphRecursionError as e:
-        print(f"⚠️ Recursion limit reached: {e}")
-
-
-################## import functions ##################
-normalizer = ddb.ServiceNameNormalizer()
-
-boto3_client = init_boto3_client(region_name)
-sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
-app = build_langgraph_workflow()
-
-################## chatbot ui ##################
-if "messages" not in st.session_state:
-    st.session_state["messages"] = [
-        {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
-    ]
-# 지난 답변 출력
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
-
-# 유저가 쓴 chat을 query라는 변수에 담음
-query = st.chat_input("Search documentation")
-if query:
-    # Session에 메세지 저장
-    st.session_state.messages.append({"role": "user", "content": query})
     
-    # UI에 출력
-    st.chat_message("user").write(query)
-
-    # query = normalizer.process_text(query)
-    st.chat_message("assistant").write(query)
-
-    # sql_search_result = sql_retriever.vector_search(query)
-    # table_search_result = table_retriever.vector_search(query)
-
-    print_graph_results(app, query=query)
-
-    st.chat_message("assistant").write("sql_search_result")
-    # st.chat_message("assistant").write(table_search_result)
-
-    # Session 메세지 저장
-    st.session_state.messages.append({"role": "assistant", "content": "sql_search_result"})
-        
