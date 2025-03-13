@@ -25,23 +25,20 @@ region_name = boto_session.region_name
 HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 NOVA_PRO = "us.amazon.nova-pro-v1:0"
-llm_model = SONNET # NOVA_PRO  # TODO: change to Nova
-
-csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
-json_response_format = """'The output should be formatted as a JSON instance that conforms to the JSON schema below.\n\nAs an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}\nthe object {"foo": ["bar", "baz"]} is a well-formatted instance of the schema. The object {"properties": {"foo": ["bar", "baz"]}} is not well-formatted.\n\nHere is the output schema:\n```\n{"properties": {"setup": {"title": "Setup", "description": "question to set up a joke", "type": "string"}, "punchline": {"title": "Punchline", "description": "answer to resolve the joke", "type": "string"}}, "required": ["setup", "punchline"]}\n```'"""
+llm_model = NOVA_PRO
 
 ATHENA_URL = f"athena.{region_name}.amazonaws.com" 
 ATHENA_DATABASE = 'text2sql'
 ATHENA_RESULTS_S3_BUCKET = 's3://text2sql-test-ottlseo/results/'
 athena_connection_string = f"awsathena+rest://@{ATHENA_URL}:443/{ATHENA_DATABASE}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}" # /&work_group={athena_wkgrp}"
-
-# engine = create_engine("sqlite:///Chinook.db")
-# db = SQLDatabase(engine)
 engine = create_engine(athena_connection_string, echo=True)
 db = SQLDatabase(engine)
 
 DIALECT = "amazon_athena"
 Session = sessionmaker(bind=engine)
+
+csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
+json_response_format = """'The output should be formatted as a JSON instance that conforms to the JSON schema below.\n\nAs an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}\nthe object {"foo": ["bar", "baz"]} is a well-formatted instance of the schema. The object {"properties": {"foo": ["bar", "baz"]}} is not well-formatted.\n\nHere is the output schema:\n```\n{"properties": {"setup": {"title": "Setup", "description": "question to set up a joke", "type": "string"}, "punchline": {"title": "Punchline", "description": "answer to resolve the joke", "type": "string"}}, "required": ["setup", "punchline"]}\n```'"""
 
 ################## graph functions ##################
 
@@ -168,15 +165,28 @@ def create_prompt(sys_template, user_template, **kwargs):
 ################## SubGraph 1) Schema Linking ##################
 
 def analyze_intent(state: GraphState) -> GraphState:
+    print(state)
     question = state["question"]
-    sys_prompt_template = "You are an assistant who understands the intent of user questions. Your task is to classify each user question into one category."
-    usr_prompt_template = f"If a database query is needed to answer the user's question, respond with 'database'. Otherwise, respond with 'general'. Skip any preamble. \n\n #Question: {question}"    
+    sys_prompt_template = """당신은 사용자 질문의 의도를 파악하는 비서입니다. 당신의 임무는 사용자 질문을 하나로 분류하는 것입니다. 오직 'database' 또는 'general' 중 하나로만 응답해야 합니다."""
+    usr_prompt_template = """주어진 질문이 데이터베이스 조회가 필요한지 판단하세요.
+    어떠한 설명이나 이유도 포함하지 말고, 오직 아래 두 단어 중 하나만 답변으로 제공하세요:
+    - 데이터베이스 조회가 필요한 경우: database
+    - 그 외의 경우: general
+    #질문: 
+    {question}\n
+    응답 (database 또는 general 중 하나만): """
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)
     intent = converse_with_bedrock(sys_prompt, usr_prompt)
 
+    # 응답 검증 및 정제
+    if intent not in ['general', 'database']:
+        # 잘못된 응답의 경우 기본값 설정
+        print(f"Unexpected response: {intent}. Defaulting to 'general'")
+        intent = 'general'
+    
     return GraphState(intent=intent)
 
-def get_sample_queries(state: GraphState) -> GraphState:
+def get_sample_queries(state: GraphState) -> GraphState: # TODO: Hybrid search 구현
     question = state["question"]
     samples = sql_retriever.vector_search(question)
     page_contents = [json.loads(doc.page_content) for doc in samples]
@@ -236,10 +246,31 @@ def check_readiness(state: GraphState) -> GraphState:
     sample_queries = state["sample_queries"]
     table_details = state.get("table_details", "")
 
-    sys_prompt_template = "You are a skilled database engineer who writes SQL queries for user questions. Your task is to determine whether it's possible to write an SQL query for the user's question based on the given database information."
-    usr_prompt_template = "Determine if sufficient information has been provided to generate an SQL query for the question. Respond with 'Ready' if there's enough information, or 'Not Ready' if the information is insufficient. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details} \n\n Skip the preamble or explaination. Only provide 'Ready' or 'Not Ready'"    
+    sys_prompt_template = """당신은 사용자 질문에 대한 SQL 쿼리 작성 가능 여부를 판단하는 시스템입니다. 
+    오직 'Ready' 또는 'Not Ready' 중 하나로만 응답해야 합니다.
+
+    지침
+    1. 주어진 질문, 샘플 쿼리 및 사용 가능한 테이블을 분석합니다.
+    2. 제공된 정보로 SQL 쿼리를 작성할 수 있는지 확인합니다.
+    3. 충분한 정보가 있으면 'Ready'으로만 응답하고, 그렇지 않은 경우 'Not Ready'으로만 응답합니다.
+    4. 어떠한 설명이나 이유도 포함하지 말고, 오직 'Ready' 또는 'Not Ready' 중 하나만 답변으로 제공하세요.
+    """
+    usr_prompt_template = """주어진 정보를 바탕으로 SQL 쿼리 생성이 가능한지 판단하세요.\n
+    #질문: 
+    {question}\n
+    #샘플 쿼리:
+    {sample_queries}\n
+    #사용 가능한 테이블: 
+    {table_details}\n
+    응답 (Ready 또는 Not Ready 중 하나만):"""
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
     readiness = converse_with_bedrock(sys_prompt, usr_prompt)
+    
+    # 응답 검증 및 정제
+    if readiness not in ['Ready', 'Not Ready']:
+        # 잘못된 응답의 경우 기본값 설정
+        print(f"Unexpected response: {readiness}. Defaulting to 'Not Ready'")
+        readiness = 'Not Ready'
     
     return GraphState(readiness=readiness)
 
@@ -249,8 +280,10 @@ def get_relevant_tables(state: GraphState) -> GraphState:
     page_contents = [doc.page_content for doc in tables if doc is not None]
     table_inputs = [json.loads(content)['table_summary'] for content in page_contents]
 
-    sys_prompt_template = "You are a skilled database engineer who writes SQL queries to match user requests. Your task is to select the tables needed to write the SQL query. Select the tables needed to generate an SQL query that matches the user's request, sort them by importance. \n\n - Response Format: {csv_list_response_format}"
-    usr_prompt_template = "Table information:\n {table_inputs}\n\n #Question: {question}\n\n Skip the preamble and only provide the valid csv format."
+    sys_prompt_template = """당신은 사용자 요청에 맞는 SQL 쿼리를 작성하는 유능한 데이터베이스 엔지니어입니다. 
+    당신의 임무는 SQL 쿼리 작성에 필요한 테이블을 선택하는 것입니다."""
+    usr_prompt_template = """사용자 요청에 맞는 SQL 쿼리를 생성하기 위해 필요한 테이블을 선택하여, 이를 중요도 순서로 정렬한 후 인덱스 번호(0부터 시작)로 응답하세요. 요구한 사항 외의 설명을 절대 추가하지 마세요.
+    \n\n #질문: {question}\n\n #테이블 정보:\n {table_inputs}\n\n #형식: {csv_list_response_format}""" #사용자 요청에 관련된 테이블이 없으면 빈 목록("")으로 응답하세요.
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, table_inputs=table_inputs, csv_list_response_format=csv_list_response_format)
     selected_tables = converse_with_bedrock(sys_prompt, usr_prompt)
 
@@ -267,11 +300,13 @@ def get_relevant_tables(state: GraphState) -> GraphState:
 
 def describe_schema(state: GraphState) -> GraphState:
     table_names = state["table_names"]
+    print("[DEBUG 298]", table_names)
     table_details = []
     inspector = inspect(engine)
     
     for table_name in table_names:
         columns = inspector.get_columns(table_name)
+        print("[DEBUG 303] columns:", columns)
 
         create_table_sql = f"CREATE TABLE {table_name} (\n"
         create_table_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
@@ -282,6 +317,8 @@ def describe_schema(state: GraphState) -> GraphState:
             result = connection.execute(sample_query)
             sample_data = [dict(zip(result.keys(), row)) for row in result]
             
+            print("[DEBUG 314] sample_data:", sample_data)
+
         table_desc = get_column_description(table_name) if 'table_search_client' in globals() else {}
 
         table_detail = {
@@ -319,6 +356,7 @@ initial_query_state = {
 
 
 def generate_query(state: GraphState) -> GraphState:
+    print("Current state:", state) 
     dialect = DIALECT
     new_query_state = copy.deepcopy(initial_query_state)
     question = state["question"]
@@ -329,8 +367,19 @@ def generate_query(state: GraphState) -> GraphState:
     error_info = query_state.get("error", {}) or {}
     hint = error_info.get("hint", "None")
     
-    sys_prompt_template = "You are a skilled database engineer who writes {dialect} SQL queries in response to user questions. Your task is to create accurate SQL queries that match the user's question based on the given database information."
-    usr_prompt_template = "Based on the following sample queries, schema information, and past failure history, create a query that matches the DB dialect. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details}\n\n #Additional information (past failure history, additional acquired information, etc.):\n {hint}"    
+    # sys_prompt_template = "You are a skilled database engineer who writes {dialect} SQL queries in response to user questions. Your task is to create accurate SQL queries that match the user's question based on the given database information."
+    # usr_prompt_template = "Based on the following sample queries, schema information, and past failure history, create a query that matches the DB dialect. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details}\n\n #Additional information (past failure history, additional acquired information, etc.):\n {hint}"    
+    sys_prompt_template = """당신은 사용자 질문에 대해 {dialect} SQL 쿼리를 작성하는 전문 데이터베이스 엔지니어입니다. 오직 SQL 쿼리만을 생성해야 하며, 어떠한 설명이나 추가 텍스트도 포함해서는 안 됩니다."""
+    usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. 어떠한 설명이나 서론 없이 오직 SQL 쿼리 문장만 제공하세요.
+    #질문:
+    {question}\n
+    #샘플 쿼리:
+    {sample_queries}\n
+    #사용 가능한 테이블:
+    {table_details}\n
+    #추가 정보 (과거 실패 이력, 추가 획득 정보 등):
+    {hint}\n
+    응답 (SQL 쿼리만):"""
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, dialect=dialect, sample_queries=sample_queries, table_details=table_details, hint=hint)
     generated_query = converse_with_bedrock(sys_prompt, usr_prompt)
 
