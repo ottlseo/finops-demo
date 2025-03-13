@@ -13,8 +13,7 @@ from langgraph.errors import GraphRecursionError
 from langchain_core.runnables import RunnableConfig
 # import src.ddb as ddb
 from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
-from src.athena import AthenaClient
-from src.common_utils import SQLDatabase, DateTimeEncoder
+from src.common_utils import SQLDatabase
 
 st.set_page_config(layout="wide")
 st.title("FinOps Demo w/ Text2Sql 💸") 
@@ -23,17 +22,25 @@ st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드�
 boto_session = boto3.Session()
 region_name = boto_session.region_name
 
-HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0" # TODO: change to Nova
+HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 NOVA_PRO = "us.amazon.nova-pro-v1:0"
-llm_model = SONNET # NOVA_PRO
+llm_model = SONNET # NOVA_PRO  # TODO: change to Nova
 
 csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
 json_response_format = """'The output should be formatted as a JSON instance that conforms to the JSON schema below.\n\nAs an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}\nthe object {"foo": ["bar", "baz"]} is a well-formatted instance of the schema. The object {"properties": {"foo": ["bar", "baz"]}} is not well-formatted.\n\nHere is the output schema:\n```\n{"properties": {"setup": {"title": "Setup", "description": "question to set up a joke", "type": "string"}, "punchline": {"title": "Punchline", "description": "answer to resolve the joke", "type": "string"}}, "required": ["setup", "punchline"]}\n```'"""
 
-engine = create_engine("sqlite:///Chinook.db") # TODO: change to athena
+ATHENA_URL = f"athena.{region_name}.amazonaws.com" 
+ATHENA_DATABASE = 'text2sql'
+ATHENA_RESULTS_S3_BUCKET = 's3://text2sql-test-ottlseo/results/'
+athena_connection_string = f"awsathena+rest://@{ATHENA_URL}:443/{ATHENA_DATABASE}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}" # /&work_group={athena_wkgrp}"
+
+# engine = create_engine("sqlite:///Chinook.db")
+# db = SQLDatabase(engine)
+engine = create_engine(athena_connection_string, echo=True)
 db = SQLDatabase(engine)
-DIALECT = "sqlite"
+
+DIALECT = "amazon_athena"
 Session = sessionmaker(bind=engine)
 
 ################## graph functions ##################
@@ -74,19 +81,15 @@ def init_boto3_client(region: str):
     return boto3.client("bedrock-runtime", region_name=region, config=retry_config)
 
 def init_search_resources():  
-    ATHENA_DATABASE = 'text2sql'
-    ATHENA_RESULTS_S3_BUCKET = 's3://text2sql-test-ottlseo/results/'
-
     EXAMPLE_QUERIES_INDEX = 'example_queries'
     TABLE_DESCRIPTION_INDEX = 'schema_descriptions'
 
     sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["input", "query"])
     table_search_client = OpenSearchClient(region_name=region_name, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
-    query_client = AthenaClient(region_name=region_name, db_name=ATHENA_DATABASE, result_s3_dir=ATHENA_RESULTS_S3_BUCKET)
 
     sql_retriever = OpenSearchVectorRetriever(sql_search_client, region_name=region_name, k=20)
     table_retriever = OpenSearchVectorRetriever(table_search_client, region_name=region_name, k=10)
-    return sql_search_client, table_search_client, sql_retriever, table_retriever, query_client
+    return sql_search_client, table_search_client, sql_retriever, table_retriever
 
 def get_column_description(table_name):
     query = {
@@ -380,35 +383,19 @@ def validate_query(state: GraphState) -> GraphState:
 def execute_query(state: GraphState) -> GraphState:
     query_state = copy.deepcopy(state["query_state"])
     query = query_state["query"]
-    
     try:
-        query_response = query_client.query(query=str(query))
-        
-        # 쿼리 결과가 오류 정보를 포함하는 경우
-        if isinstance(query_response, dict) and query_response.get('status') == 'error':
-            # Athena 오류 정보를 그대로 전달
-            query_state.update(
-                json.loads(json.dumps(query_response, cls=DateTimeEncoder))
-            )
-            return GraphState(query_state=query_state)
-        
-        # 성공적인 결과 처리
-        query_state["result"] = "\n".join([str(row) for row in query_response])
-        query_state["status"] = "success"
-        return GraphState(query_state=query_state)
-
+        with Session() as session:
+            result = session.execute(text(query))
+            query_state["result"] = "\n".join([str(row) for row in result])
     except Exception as e:
-        query_state.update({
-            "status": "error",
-            "error": {
-                "code": "E02",
-                "message": f"An error occurred while executing the query: {str(e)}",
-                "failed_step": "execution"
-            }
-        })
+        query_state["status"] = "error"
+        query_state["error"]["code"] = "E02"
+        query_state["error"]["message"] = f"An error occurred while executing the validated query: {str(e)}"
+        query_state["error"]["failed_step"] = "execution"
         return GraphState(query_state=query_state)
+    return GraphState(query_state=query_state)
     
-def handle_failure_legacy(state: GraphState) -> GraphState:
+def handle_failure(state: GraphState) -> GraphState:
     query_state = copy.deepcopy(state["query_state"])
     query = query_state['query']
     message = query_state['error']['message']
@@ -447,58 +434,6 @@ Skip the preamble and only provide the valid JSON document."""
     query_state["hint"] = hint
     
     return GraphState(next_action=failure_type, query_state=query_state)
-
-def handle_failure(state: GraphState) -> GraphState:
-    query_state = copy.deepcopy(state["query_state"])
-    query = query_state['query']
-    message = query_state['error']['message']
-    athena_error = query_state['error'].get('athena_error', {})
-    
-    sys_prompt_template = """You are a skilled database engineer who handles Athena SQL query failures. 
-    Your task is to identify the cause of failure and determine the next steps for problem resolution."""
-    
-    usr_prompt_template = """Based on the Athena query failure message and error details, provide one of the following causes (`failure_type`) along with a clue for resolution (`hint`).
-Here are examples of failure_type choices:
-Inaccurate query syntax: `syntax_check`
-Schema mismatch (no such table or column): `schema_check`
-External DB factors (permissions, S3 access issues, etc.): `stop`
-Temporary Athena service issues: `retry`
-
-#Failed query: {query}
-
-#Error message: {message}
-
-#Athena error details: {athena_error}
-
-#Format: 
-{{
-    "failure_type": "<one of the failure types mentioned above>",
-    "hint": "<brief explanation or suggestion for resolution>"
-}}
-
-Skip the preamble and only provide the valid JSON document."""
-
-    sys_prompt, usr_prompt = create_prompt(
-        sys_prompt_template, 
-        usr_prompt_template, 
-        query=query, 
-        message=message,
-        athena_error=json.dumps(athena_error, indent=2)
-    )
-    result = converse_with_bedrock(sys_prompt, usr_prompt)
-
-    try:
-        json_result = json.loads(result)
-        failure_type = json_result.get("failure_type", "unknown")
-        hint = json_result.get("hint", "No hint provided")
-    except json.JSONDecodeError:
-        print(f"Failed to parse JSON response: {result}")
-        failure_type = "unknown"
-        hint = "Failed to parse AI response"
-
-    query_state["hint"] = hint
-    return GraphState(next_action=failure_type, query_state=query_state)
-
     
 def get_relevant_columns(state: GraphState) -> GraphState:
     query_state = copy.deepcopy(state["query_state"])
@@ -581,7 +516,7 @@ def build_langgraph_workflow():
     # Edges in SubGraph1
     workflow.add_edge("get_sample_queries", "check_readiness")
     workflow.add_conditional_edges(
-        "check_readiness"    ,
+        "check_readiness",
         next_step_by_readiness,
         {
             "Ready": "generate_query",
@@ -594,7 +529,7 @@ def build_langgraph_workflow():
     # Edges in SubGraph2
     workflow.add_edge("generate_query", "validate_query")
     workflow.add_conditional_edges(
-        "validate_query"    ,
+        "validate_query",
         next_step_by_query_state,
         {
             "success": "execute_query",
@@ -602,7 +537,7 @@ def build_langgraph_workflow():
         }
     )
     workflow.add_conditional_edges(
-        "execute_query"    ,
+        "execute_query",
         next_step_by_query_state,
         {
             "success": "get_database_answer",
@@ -610,7 +545,7 @@ def build_langgraph_workflow():
         }
     )
     workflow.add_conditional_edges(
-        "handle_failure"    ,
+        "handle_failure",
         next_step_by_next_action,
         {
             "schema_check": "get_relevant_columns",
@@ -759,7 +694,7 @@ def print_graph_results_with_details(app, query: str):
 ################## setting ##################
 
 boto3_client = init_boto3_client(region_name)
-sql_search_client, table_search_client, sql_retriever, table_retriever, query_client = init_search_resources()
+sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
 app = build_langgraph_workflow()
 # normalizer = ddb.ServiceNameNormalizer()
 
