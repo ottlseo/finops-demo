@@ -4,10 +4,17 @@ import streamlit as st
 import os
 import yaml
 import re
+import datetime
 from langchain.callbacks.base import BaseCallbackHandler
 from sqlalchemy import inspect, MetaData, Table, select
 from sqlalchemy.engine import Engine
 from sqlalchemy.schema import CreateTable
+
+class DateTimeEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
 
 class ToolStreamHandler(BaseCallbackHandler):
     def __init__(self, container, initial_text=""):
