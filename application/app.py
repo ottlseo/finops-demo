@@ -25,7 +25,7 @@ region_name = boto_session.region_name
 HAIKU = "anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 NOVA_PRO = "us.amazon.nova-pro-v1:0"
-llm_model = NOVA_PRO
+llm_model = SONNET #NOVA_PRO # TODO: 프롬프트 개선 작업이 필요해서 우선은 Sonnet으로 테스트 진행
 
 ATHENA_URL = f"athena.{region_name}.amazonaws.com" 
 ATHENA_DATABASE = 'text2sql'
@@ -246,6 +246,11 @@ def check_readiness(state: GraphState) -> GraphState:
     sample_queries = state["sample_queries"]
     table_details = state.get("table_details", "")
 
+    # sys_prompt_template = "You are a skilled database engineer who writes SQL queries for user questions. Your task is to determine whether it's possible to write an SQL query for the user's question based on the given database information."
+    # usr_prompt_template = "Determine if sufficient information has been provided to generate an SQL query for the question. Respond with 'Ready' if there's enough information, or 'Not Ready' if the information is insufficient. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details} \n\n Skip the preamble or explaination. Only provide 'Ready' or 'Not Ready'"    
+    
+    ## TODO: table_details 내용 빼고, hourly_view_all 에서만 검색하도록 하기
+    ## TODO: 새로운 노드 추가하기 -> get_relevant_columns: CUR 공식 문서(OpenSearch) 기반으로 적절한 column을 검색해 매핑
     sys_prompt_template = """당신은 사용자 질문에 대한 SQL 쿼리 작성 가능 여부를 판단하는 시스템입니다. 
     오직 'Ready' 또는 'Not Ready' 중 하나로만 응답해야 합니다.
 
@@ -260,17 +265,16 @@ def check_readiness(state: GraphState) -> GraphState:
     {question}\n
     #샘플 쿼리:
     {sample_queries}\n
-    #사용 가능한 테이블: 
-    {table_details}\n
+    #사용 가능한 테이블: cur.hourly_view_all\n
     응답 (Ready 또는 Not Ready 중 하나만):"""
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
     readiness = converse_with_bedrock(sys_prompt, usr_prompt)
     
     # 응답 검증 및 정제
-    if readiness not in ['Ready', 'Not Ready']:
-        # 잘못된 응답의 경우 기본값 설정
-        print(f"Unexpected response: {readiness}. Defaulting to 'Not Ready'")
-        readiness = 'Not Ready'
+    # if readiness not in ['Ready', 'Not Ready']:
+    #     # 잘못된 응답의 경우 기본값 설정
+    #     print(f"Unexpected response: {readiness}. Defaulting to 'Not Ready'")
+    #     readiness = 'Not Ready'
     
     return GraphState(readiness=readiness)
 
@@ -300,13 +304,11 @@ def get_relevant_tables(state: GraphState) -> GraphState:
 
 def describe_schema(state: GraphState) -> GraphState:
     table_names = state["table_names"]
-    print("[DEBUG 298]", table_names)
     table_details = []
     inspector = inspect(engine)
     
     for table_name in table_names:
         columns = inspector.get_columns(table_name)
-        print("[DEBUG 303] columns:", columns)
 
         create_table_sql = f"CREATE TABLE {table_name} (\n"
         create_table_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
@@ -317,8 +319,6 @@ def describe_schema(state: GraphState) -> GraphState:
             result = connection.execute(sample_query)
             sample_data = [dict(zip(result.keys(), row)) for row in result]
             
-            print("[DEBUG 314] sample_data:", sample_data)
-
         table_desc = get_column_description(table_name) if 'table_search_client' in globals() else {}
 
         table_detail = {

@@ -1,0 +1,262 @@
+[
+    {
+        "cur.summary_view_all": {
+            "table_desc": "TBU - 무엇을 하는 테이블인지? hourly_view_all과는 어떻게 다른지?",
+            "cols": [
+                {
+                    "col": "year",
+                    "col_desc": "TBU -- fyi: type 정의되지 않은 컬럼은 전부 string type"
+                },
+                {
+                    "col": "month",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "billing_period",
+                    "col_desc": "TBU - timestamp"
+                },
+                {
+                    "col": "usage_date",
+                    "col_desc": "TBU - timestamp"
+                },
+                {
+                    "col": "payer_account_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "linked_account_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "invoice_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "charge_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "charge_category",
+                    "col_desc": "TBU - varchar(13) type"
+                },
+                {
+                    "col": "purchase_option",
+                    "col_desc": "TBU - varchar(11) type"
+                },
+                {
+                    "col": "ri_sp_arn",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_code",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_name",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "service",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_family",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "usage_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "operation",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "item_description",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "availability_zone",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "region",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "instance_type_family",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "instance_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "platform",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "tenancy",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "processor",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "processor_features",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "database_engine",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_group",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_from_location",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "product_to_location",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "current_generation",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "legal_entity",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "billing_entity",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "pricing_unit",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "bill_bill_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "resource_id_count",
+                    "col_desc": "TBU - bigint type"
+                },
+                {
+                    "col": "usage_quantity",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "unblended_cost",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "amortized_cost",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "ri_sp_trueup",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "ri_sp_upfront_fees",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "public_cost",
+                    "col_desc": "TBU - double type"
+                }
+            ]
+        },
+        "cur.hourly_view_all": {
+            "table_desc": "AWS CUR 데이터를 시간별로 집계한 뷰 -- TODO: summary와는 어떻게 다른지?",
+            "cols": [
+                {
+                    "col": "product_code",
+                    "col_desc": "TBU -- fyi: type 정의되지 않은 컬럼은 전부 string type"
+                },
+                {
+                    "col": "service",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "operation",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "charge_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "usage_type",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "item_description",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "resource_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "pricing_unit",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "region",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "pricing_term",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "billing_period",
+                    "col_desc": "TBU - timestamp"
+                },
+                {
+                    "col": "usage_date",
+                    "col_desc": "TBU - timestamp"
+                },
+                {
+                    "col": "payer_account_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "linked_account_id",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "savings_plan_a_r_n",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "reservation_a_r_n",
+                    "col_desc": "TBU"
+                },
+                {
+                    "col": "unblended_cost",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "reservation_effective_cost",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "savings_plan_effective_cost",
+                    "col_desc": "TBU - double type"
+                },
+                {
+                    "col": "usage_quantity",
+                    "col_desc": "TBU - double type"
+                }
+            ]
+        }
+    }
+]
