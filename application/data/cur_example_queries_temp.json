@@ -1,0 +1,18 @@
+{
+    "example_queries": [
+        {
+            "input": "요청:\n지난 1년 간의 EC2 서비스의 일별 사용 비용을 조회\n\n비즈니스 목적:\n- EC2 서비스의 일별 비용 트렌드 분석\n- 지난 1년간의 EC2 사용 비용 모니터링\n- 비용 최적화를 위한 데이터 수집\n\n상세 용도:\n1. 사용 패턴 분석 및 모니터링\n- 지난 1년 간의 EC2 사용량 추이를 모니터링 함으로써 사용량 변화 확인\n- 비정상적인 비용 증가 감지\n- 계절적 패턴 분석\n\n2. 예산 전략 수립\n- 예산 수립 및 검토\n\n", 
+            "query": "SELECT usage_date, SUM(unblended_cost) AS unblended_cost FROM cur.hourly_view_all WHERE product_code = 'AmazonEC2' AND (date_trunc('day', usage_date) >= (date_trunc('day', current_timestamp) - INTERVAL '365' DAY)) GROUP BY usage_date"
+        },
+
+        {
+            "input": "요청:\n지난 일주일 간 EC2 사용 비용을 시간대별로 분석\n\n비즈니스 목적:\n- 피크 시간대 파악\n- 자동 스케일링 정책 최적화\n", 
+            "query": "SELECT EXTRACT(HOUR FROM usage_date) as hour, AVG(unblended_cost) AS avg_hourly_cost FROM cur.hourly_view_all WHERE product_code = 'AmazonEC2' AND usage_date >= CURRENT_DATE - INTERVAL '7' DAY GROUP BY hour ORDER BY hour"
+        },
+
+        {
+            "input": "요청:\n지난 90일 간의 온디맨드와 예약 인스턴스 사용 비용을 비교\n\n비즈니스 목적:\n- 구매 옵션 최적화\n- 비용 절감 기회 발굴\n", 
+            "query": "SELECT pricing_term, SUM(unblended_cost) AS total_cost FROM cur.hourly_view_all WHERE product_code = 'AmazonEC2' AND usage_date >= CURRENT_DATE - INTERVAL '90' DAY GROUP BY pricing_term"
+        }
+    ]
+}
