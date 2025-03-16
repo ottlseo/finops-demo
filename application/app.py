@@ -16,7 +16,7 @@ from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
 from src.common_utils import SQLDatabase
 
 st.set_page_config(layout="wide")
-st.title("FinOps Demo w/ Text2Sql 💸") 
+st.title("FinOps Text2SQL Demo 💸") 
 st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
 
 boto_session = boto3.Session()
@@ -79,7 +79,7 @@ def init_boto3_client(region: str):
 
 def init_search_resources():  
     EXAMPLE_QUERIES_INDEX = 'example_queries'
-    TABLE_DESCRIPTION_INDEX = 'schema_descriptions'
+    TABLE_DESCRIPTION_INDEX = 'schema_description'
 
     sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["input", "query"])
     table_search_client = OpenSearchClient(region_name=region_name, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
@@ -489,6 +489,8 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     question = state["question"]
     query = query_state["query"]
     message = query_state['error']['message']
+    
+    # 키워드 검색 결과를 얻습니다
     sys_prompt_template = "당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 스키마 탐색에 관련된 키워드를 제안하는 것입니다."
     usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 
     이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
@@ -497,10 +499,27 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     #오류 메시지: {message}\n\n
     추가 텍스트나 설명 없이 쉼표로 구분된 키워드 목록이나 짧은 문구로만 응답하세요.\n\n
     #Format: {csv_list_response_format}"""
-    # Given a user question, a failed SQL query, and an error message, provide 3-5 relevant keywords or phrases for database schema exploration. These should help in finding the correct table and column names to fix the query.\n\n
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, message=message, csv_list_response_format=csv_list_response_format)
+    
+    sys_prompt, usr_prompt = create_prompt(
+        sys_prompt_template, 
+        usr_prompt_template, 
+        question=question, 
+        query=query, 
+        message=message, 
+        csv_list_response_format=csv_list_response_format
+    )
+    
     keywords = converse_with_bedrock(sys_prompt, usr_prompt)
-    return keywords
+    search_results = search_by_keywords(keywords) if keywords else ""
+    
+    # query_state를 업데이트하여 검색 결과 포함
+    query_state["relevant_columns"] = {
+        "keywords": keywords,
+        "search_results": search_results
+    }
+    
+    # GraphState의 예상 필드 중 하나인 query_state를 반환
+    return GraphState(query_state=query_state)
 
 def next_step_by_query_state(state:GraphState) -> GraphState:
     return state["query_state"]["status"]
@@ -511,7 +530,7 @@ def next_step_by_next_action(state:GraphState) -> GraphState:
 ################## Answer generation ##################
 def get_general_answer(state: GraphState) -> GraphState:
     question = state["question"]
-    sys_prompt_template = "사용자의 일반적인 질문에 답하는 유능한 어시스턴트입니다. 질문에 대한 답을 모르면, 솔직하게 모른다고 인정하세요. 한국어로 답변하세요."
+    sys_prompt_template = "사용자의 일반적인 질문에 답하는 유능한 어시스턴트입니다. 질문에 대한 답을 모를 경우, 솔직하게 모른다고 인정하세요. 한국어로 답변하세요."
     usr_prompt_template = "#Question: {question}"
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
@@ -525,13 +544,27 @@ def get_database_answer(state: GraphState) -> GraphState:
     data = query_state["result"]
     failed_step = query_state["error"]["failed_step"]
     message = query_state["error"]["message"]
-    sys_prompt_template = "You are a competent assistant who answers user questions based on database information. Your task is to provide thorough answers to user questions, referencing the given information."
+    sys_prompt_template = "당신은 데이터베이스 정보를 기반으로 사용자의 질문에 답변하는 전문 어시스턴트입니다. 주어진 정보를 참조하여 사용자의 질문에 대해 상세하고 정확한 답변을 제공하는 것이 당신의 역할입니다."
+    #"You are a competent assistant who answers user questions based on database information. Your task is to provide thorough answers to user questions, referencing the given information."
     
     if query_state["status"] == "success":
-        usr_prompt_template = "The answer should include the used query, dataframe (as a Markdown Table), and a brief response to the question. \n\n#Question: {question}\n\n#Used query: {query}\n\n#Data: {data}\n\n"
+        usr_prompt_template = """답변은 사용된 쿼리, 데이터프레임(markdown table 형식), 그리고 질문에 대한 간단한 설명을 포함해야 합니다. 
+        만약 쿼리가 정상 실행되었는데 데이터가 비어있다면, 조회된 데이터가 없다고 답하고, 다른 기간이나 조건으로 검색해볼 것을 사용자에게 추천하세요.
+        현재 날짜가 언제인지는 신경쓸 필요가 없습니다. 쿼리가 정상 실행되었다면 결과를 데이터 프레임으로 만들어 출력하세요. \n\n
+        #질문: {question}\n\n
+        #실행된 쿼리: {query}\n\n
+        #데이터: {data}\n
+        """
+        #"The answer should include the used query, dataframe (as a Markdown Table), and a brief response to the question. \n\n#Question: {question}\n\n#Used query: {query}\n\n#Data: {data}\n\n"
         sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, data=data)
     else:
-        usr_prompt_template = "The following is a record of a failed query execution for a user question. Based on this, explain why the request processing failed.\n\n#Question: {question}\n\n#Used query: {query}\n\n#Failed step: {failed_step}\n\n#Error message: {message}\n\n"
+        usr_prompt_template = """다음은 사용자 질문에 대한 쿼리 실행 실패 기록입니다. 이를 바탕으로 요청 처리가 실패한 이유를 설명하세요.\n\n
+        #질문: {question}\n\n
+        #실행된 쿼리: {query}\n\n
+        #실패 단계: {failed_step}\n\n
+        #오류 메시지: {message}\n
+        """
+        #"The following is a record of a failed query execution for a user question. Based on this, explain why the request processing failed.\n\n#Question: {question}\n\n#Used query: {query}\n\n#Failed step: {failed_step}\n\n#Error message: {message}\n\n"
         sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, failed_step=failed_step, message=message)    
         
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
@@ -626,11 +659,8 @@ def print_graph_results(app, query: str):
 
     # 어시스턴트 응답
     with st.chat_message("assistant"):
-        # 진행 상황 컨테이너
-        progress_container = st.container()
-        
-        # 최종 응답 컨테이너
-        response_container = st.container()
+        progress_container = st.container() # 진행 상황 컨테이너
+        response_container = st.container() # 최종 응답 컨테이너
         
         try:
             current_node = None
@@ -673,69 +703,73 @@ def print_graph_results_with_details(app, query: str):
     inputs = GraphState(question=query)
 
     with st.chat_message("assistant"):
-        progress_container = st.container() # 진행 상황 컨테이너
-        response_container = st.container() # 최종 응답 컨테이너
+        progress_container = st.container()
+        response_container = st.container()
         
         try:
             current_node = None
-            node_results = {}  # 각 노드의 결과를 저장
+            node_results = {}
+            previous_states = {}
             
             for output in app.stream(inputs, config=config):
-                if isinstance(output, str):  # 문자열이 반환된 경우
+                if isinstance(output, str):
                     output = {"result": {"value": output}}
-                elif not isinstance(output, dict):  # 딕셔너리가 아닌 경우
+                elif not isinstance(output, dict):
                     output = {"result": {"value": str(output)}}
 
                 for key, value in output.items():
-                    # 새로운 노드 처리 시작
-                    if current_node != key:
-                        current_node = key
-                        with progress_container:
-                            for node, (icon, title, result) in node_results.items(): # 이전 결과들 모두 표시
-                                with st.expander(f"{icon} {title}", expanded=False):
-                                    if isinstance(result, dict):
-                                        for k, v in result.items():
-                                            st.markdown(f"**{k}:**")
-                                            st.code(str(v))
+                    current_state = str(value)
+                    
+                    if key not in previous_states or previous_states[key] != current_state:
+                        previous_states[key] = current_state
+                        
+                        if current_node != key:
+                            current_node = key
+                            with progress_container:
+                                if key == "analyze_intent":
+                                    with st.expander("🤔 질문을 분석하고 있습니다...", expanded=False):  # expanded=False로 변경
+                                        st.write({"analysis": value})
+                                    node_results[key] = ("🤔", "Question Analysis", {"analysis": value})
+                                elif key == "get_sample_queries":
+                                    if isinstance(value, dict) and 'sample_queries' in value:
+                                        formatted_queries = "\n\n".join([
+                                            f"Query: {q['query']}\nContext: {q['input']}"
+                                            for q in value['sample_queries']
+                                        ])
                                     else:
-                                        st.code(str(result))
-                            
-                            # 현재 진행 중인 노드 표시
-                            if key == "analyze_intent":
-                                st.info("🤔 질문을 분석하고 있습니다...")
-                                node_results[key] = ("🤔", "Question Analysis", value)
-                            elif key == "get_sample_queries":
-                                st.info("🔍 비슷한 쿼리를 찾고 있습니다...")
-                                formatted_queries = "\n\n".join([
-                                    f"Query: {q['query']}\nContext: {q['input']}"
-                                    for q in value.get('sample_queries', [])
-                                ])
-                                node_results[key] = ("🔍", "Similar Queries", formatted_queries)
-                            elif key == "generate_query":
-                                st.info("⚙️ SQL 쿼리를 생성하고 있습니다...")
-                                node_results[key] = ("⚙️", "Generated SQL Query", 
-                                                   value.get('query_state', {}).get('query', ''))
-                            elif key == "execute_query":
-                                st.info("🚀 생성한 쿼리를 실행합니다...")
-                                node_results[key] = ("🚀", "Query Execution Results", 
-                                                   value.get('query_state', {}))
-                            elif key == "generate_answer":
-                                st.info("📝 응답을 생성하고 있습니다...")
-                                node_results[key] = ("📝", "Final Response", value)
-                                
-                    if 'answer' in value:
+                                        formatted_queries = str(value)
+                                    
+                                    with st.expander("🔍 비슷한 쿼리를 찾고 있습니다...", expanded=False):  # expanded=False로 변경
+                                        st.write({"queries": formatted_queries})
+                                    node_results[key] = ("🔍", "Similar Queries", {"queries": formatted_queries})
+                                elif key == "generate_query":
+                                    query_value = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("⚙️ SQL 쿼리를 생성하고 있습니다...", expanded=False):  # expanded=False로 변경
+                                        st.write({"query": query_value})
+                                    node_results[key] = ("⚙️", "Generated SQL Query", {"query": query_value})
+                                elif key == "execute_query":
+                                    execution_result = value.get('query_state', {}) if isinstance(value, dict) else {"result": str(value)}
+                                    with st.expander("🚀 생성한 쿼리를 실행합니다...", expanded=False):  # expanded=False로 변경
+                                        st.write(execution_result)
+                                    node_results[key] = ("🚀", "Query Execution Results", execution_result)
+                                elif key == "generate_answer":
+                                    answer_value = {"answer": value} if isinstance(value, str) else value
+                                    with st.expander("📝 응답을 생성하고 있습니다...", expanded=False):  # expanded=False로 변경
+                                        st.write(answer_value)
+                                    node_results[key] = ("📝", "Final Response", answer_value)
+                    
+                    if isinstance(value, dict) and 'answer' in value:
                         with response_container:
                             st.markdown(value['answer'])
-                            # 답변을 세션에 저장
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
                             )
-                    
+            
             # 최종 결과 표시
             with progress_container:
                 st.markdown("### 🔍 Execution Details")
                 for node, (icon, title, result) in node_results.items():
-                    with st.expander(f"{icon} {title}", expanded=False):
+                    with st.expander(f"{icon} {title}", expanded=False):  # expanded=False로 변경
                         if isinstance(result, dict):
                             for k, v in result.items():
                                 st.markdown(f"**{k}:**")
@@ -748,6 +782,7 @@ def print_graph_results_with_details(app, query: str):
             st.session_state.messages.append(
                 {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
             )
+
 
 ################## setting ##################
 
