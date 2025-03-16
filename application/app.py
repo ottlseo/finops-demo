@@ -359,7 +359,7 @@ def generate_query(state: GraphState) -> GraphState:
     new_query_state = copy.deepcopy(initial_query_state)
     question = state["question"]
     sample_queries = state["sample_queries"]
-    table_details = state["table_details"]
+    table_details = "cur.hourly_view_all" #state["table_details"]
 
     query_state = state.get("query_state", {}) or {}
     error_info = query_state.get("error", {}) or {}
@@ -673,17 +673,19 @@ def print_graph_results_with_details(app, query: str):
     inputs = GraphState(question=query)
 
     with st.chat_message("assistant"):
-        # 진행 상황 컨테이너
-        progress_container = st.container()
-        
-        # 최종 응답 컨테이너
-        response_container = st.container()
+        progress_container = st.container() # 진행 상황 컨테이너
+        response_container = st.container() # 최종 응답 컨테이너
         
         try:
             current_node = None
             node_results = {}  # 각 노드의 결과를 저장
             
             for output in app.stream(inputs, config=config):
+                if isinstance(output, str):  # 문자열이 반환된 경우
+                    output = {"result": {"value": output}}
+                elif not isinstance(output, dict):  # 딕셔너리가 아닌 경우
+                    output = {"result": {"value": str(output)}}
+
                 for key, value in output.items():
                     # 새로운 노드 처리 시작
                     if current_node != key:
