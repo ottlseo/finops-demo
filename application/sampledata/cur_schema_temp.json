@@ -174,7 +174,7 @@
             ]
         },
         "cur.hourly_view_all": {
-            "table_desc": "AWS CUR 데이터를 시간별로 집계한 뷰 -- TODO: summary와는 어떻게 다른지?",
+            "table_desc": "AWS CUR 데이터를 시간별로 집계한 뷰",
             "cols": [
                 {
                     "col": "product_code",
@@ -182,7 +182,7 @@
                 },
                 {
                     "col": "service",
-                    "col_desc": "TBU"
+                    "col_desc": "고객에 대한 특정 AWS 서비스를 고유한 짧은 약어로 식별합니다. (예시: Amazon EC2, AWS KMS)"
                 },
                 {
                     "col": "operation",
@@ -244,71 +244,71 @@
                 },
                 {
                     "col": "charge_type",
-                    "col_desc": "이 항목에 적용되는 요금 유형입니다. 가능한 유형은 다음과 같습니다. (참고: LineItemType이 할인인 항목의 경우 BlendedCost는 비어 있습니다. 할인은 멤버 계정의 일반 비용만 사용하여 계산되며 멤버 계정 및 SKU별로 집계됩니다. 따라서 BlendedCost는 할인에 사용할 수 없습니다)"
+                    "col_desc": "이 항목에 적용되는 요금 유형입니다. 가능한 유형은 다음과 같습니다. (참고: charge_type이 할인인 항목의 경우 BlendedCost는 비어 있습니다. 할인은 멤버 계정의 일반 비용만 사용하여 계산되며 멤버 계정 및 SKU별로 집계됩니다. 따라서 BlendedCost는 할인에 사용할 수 없습니다)"
                 },
                 {
                     "col": "usage_type",
-                    "col_desc": "TBU"
+                    "col_desc": "이 항목의 사용량 세부 정보입니다. 예를 들어 USW2-BoxUsage:m2.2xlarge는 미국 서부(오레곤) 리전에 있는 M2 고용량 메모리 2xlarge 인스턴스를 설명합니다."
                 },
                 {
                     "col": "item_description",
-                    "col_desc": "TBU"
+                    "col_desc": "항목 유형의 설명입니다. 예를 들어 사용량 항목의 설명은 지정된 기간 동안 어떤 유형의 사용량이 발생했는지 요약합니다. 유연한 크기의 RI의 경우 설명은 그 혜택이 적용되는 RI와 일치합니다. 예를 들어 항목이 t2.micro와 일치하고 t2.small RI가 사용량에 적용된 경우 lineItem/LineItemDescription에 t2.small이 표시됩니다. RI 할인이 포함된 사용량 항목의 설명에는 항목에 포함되는 요금제를 포함합니다."
                 },
                 {
                     "col": "resource_id",
-                    "col_desc": "TBU"
+                    "col_desc": "(선택 사항) 보고서에 개별 리소스 ID를 포함하기로 선택했다면, 이 열은 프로비저닝한 리소스 ID를 포함합니다. 예를 들어 Amazon S3 스토리지 버킷, Amazon EC2 컴퓨팅 인스턴스 또는 Amazon RDS 데이터베이스 각각에 리소스 ID가 있습니다. 데이터 전송 및 API 요청과 같이 인스턴스화된 호스트와 연결되지 않은 사용량 유형, 그리고 할인, 크레딧 및 세금과 같은 항목 유형에 대해서는 이 필드가 빈 칸입니다."
                 },
                 {
                     "col": "pricing_unit",
-                    "col_desc": "TBU"
+                    "col_desc": "사용 비용을 계산하는 데 AWS 사용한 요금 단위입니다. 예를 들어 Amazon EC2 인스턴스 사용량의 요금 단위는 시간입니다."
                 },
                 {
                     "col": "region",
-                    "col_desc": "TBU"
+                    "col_desc": "AWS 서비스를 호스팅하는 지리적 영역입니다. 이 필드를 사용하여 특정 리전에 걸쳐 사용량을 분석합니다."
                 },
                 {
                     "col": "pricing_term",
-                    "col_desc": "TBU"
+                    "col_desc": "AWS 사용량이 예약인지 온디맨드인지의 여부입니다."
                 },
                 {
                     "col": "billing_period",
-                    "col_desc": "TBU - timestamp"
+                    "col_desc": "이 보고서의 청구 기간 시작일(UTC)입니다. 형식은 YYYY-MM-DDTHH:mm:ssZ입니다."
                 },
                 {
                     "col": "usage_date",
-                    "col_desc": "TBU - timestamp"
+                    "col_desc": "이 항목의 시작 날짜와 시간(UTC)입니다. 포괄적입니다. 형식은 YYYY-MM-DDTHH:mm:ssZ입니다."
                 },
                 {
                     "col": "payer_account_id",
-                    "col_desc": "TBU"
+                    "col_desc": "Payer 계정의 계정 ID입니다. AWS Organizations의 조직의 경우 관리 계정의 계정 ID입니다."
                 },
                 {
                     "col": "linked_account_id",
-                    "col_desc": "TBU"
+                    "col_desc": "이 항목에서 사용된 계정의 계정 ID입니다. 조직의 경우, 이는 관리 계정일 수도 있고 멤버 계정일 수도 있습니다. 이 필드를 사용하여 계정별 비용과 사용량을 추적할 수 있습니다."
                 },
                 {
                     "col": "savings_plan_a_r_n",
-                    "col_desc": "TBU"
+                    "col_desc": "절감형 플랜 (Savings Plan)의 고유 식별자입니다. 이 정보는 특히 Savings plan 관리와 비용 최적화를 위한 분석에서 중요한 역할을 합니다."
                 },
                 {
                     "col": "reservation_a_r_n",
-                    "col_desc": "TBU"
+                    "col_desc": "혜택을 받는 RI 인스턴스의 고유 식별자 ARN입니다. 값에는 AWS 서비스 이름과 RI를 구입한 리전이 포함되어 있으며, 이 정보는 특히 RI 관리와 비용 최적화를 위한 분석에서 중요한 역할을 합니다."
                 },
                 {
                     "col": "unblended_cost",
-                    "col_desc": "TBU - double type"
+                    "col_desc": "예약 인스턴스(RI) 또는 Savings Plan 할인이 적용되기 전의 실제 사용량에 대한 시간당 요금입니다. 리소스 사용 시점의 실제 요금을 반영하며, 할인이나 크레딧이 적용되기 전의 순수 사용량 기준 비용을 나타냅니다."
                 },
                 {
                     "col": "reservation_effective_cost",
-                    "col_desc": "TBU - double type"
+                    "col_desc": "특정 기간동안의 예약 인스턴스(RI)의 실질적인 비용으로, RI의 선결제 비용과 월별 요금을 더한 값입니다."
                 },
                 {
                     "col": "savings_plan_effective_cost",
-                    "col_desc": "TBU - double type"
+                    "col_desc": "절감형 플랜 월간 약정 금액(선결제 및 기본 요금)의 비율은 각 사용량 행에 할당됩니다."
                 },
                 {
                     "col": "usage_quantity",
-                    "col_desc": "TBU - double type"
+                    "col_desc": "지정된 기간 동안 발생한 사용량의 총합입니다."
                 }
             ]
         }
