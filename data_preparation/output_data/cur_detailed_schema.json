@@ -5,7 +5,7 @@
             "cols": [
                 {
                     "col": "product_code",
-                    "col_desc": "측정된 제품의 코드입니다. 예를 들어 Amazon EC2는 Amazon Elastic Compute Cloud의 제품 코드입니다.",
+                    "col_desc": "AWS 서비스를 식별하는 제품 코드입니다. 정의된 코드만 사용 가능하며, 그 외의 코드는 사용해선 안 됩니다: ec2, lambda, ecs, s3, eks, kms, rds",
                     "detailed_info": {
                         "purpose": "product_code 컬럼은 AWS 서비스 및 제품을 고유하게 식별하는 코드입니다. 이를 통해 비용이 발생한 특정 AWS 제품을 추적할 수 있습니다.",
                         "cost_analysis_usage": [
@@ -17,7 +17,7 @@
                 },
                 {
                     "col": "service",
-                    "col_desc": "고객에 대한 특정 AWS 서비스를 고유한 짧은 약어로 식별합니다. (예시: Amazon EC2, AWS KMS)",
+                    "col_desc": "고객에 대한 특정 AWS 서비스를 고유한 짧은 약어로 식별합니다. 정의된 서비스 코드만 사용 가능합니다. 비용 분석 시 반드시 다음의 코드를 정확히 사용해야 하며 그밖의 서비스 코드는 사용하지 마세요: AmazonEC2, AWSLambda, AmazonECS, AmazonS3, AmazonEKS, AWSKMS, AmazonRDS",
                     "detailed_info": {
                         "purpose": "이 컬럼은 AWS 비용이 발생한 서비스를 식별하는 데 사용됩니다. 각 AWS 서비스는 고유한 약어로 표시되며, 이를 통해 비용이 어떤 서비스에서 발생했는지 쉽게 파악할 수 있습니다.",
                         "cost_analysis_usage": [
@@ -30,7 +30,7 @@
                 },
                 {
                     "col": "operation",
-                    "col_desc": "이 항목에서 다루는 특정 AWS 작업입니다. 이 항목의 구체적인 사용량에 대해 설명합니다. 예를 들어 RunInstances 값은 Amazon EC2 인스턴스 작업을 나타냅니다.",
+                    "col_desc": "AWS 서비스에서 수행된 특정 작업이나 API 호출을 식별하는 데 사용됩니다. 예를 들어 RunInstances 값은 Amazon EC2 인스턴스를 실행하는 작업을 나타냅니다.",
                     "detailed_info": {
                         "purpose": "operation 컬럼은 AWS 서비스에서 수행된 특정 작업이나 API 호출을 식별하는 데 사용됩니다. 이를 통해 비용이 발생한 작업의 유형을 파악할 수 있습니다.",
                         "cost_analysis_usage": [

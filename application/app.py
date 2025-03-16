@@ -27,9 +27,9 @@ SONNET = "anthropic.claude-3-5-sonnet-20241022-v2:0"
 NOVA_PRO = "us.amazon.nova-pro-v1:0"
 llm_model = SONNET #NOVA_PRO # TODO: 프롬프트 개선 작업이 필요해서 우선은 Sonnet으로 테스트 진행
 
-ATHENA_URL = f"athena.{region_name}.amazonaws.com" 
-ATHENA_DATABASE = 'text2sql'
-ATHENA_RESULTS_S3_BUCKET = 's3://text2sql-test-ottlseo/results/'
+ATHENA_URL = f"athena.us-east-1.amazonaws.com" 
+ATHENA_DATABASE = 'cur'
+ATHENA_RESULTS_S3_BUCKET = 's3://athena-query-result-finops-cost-and-usage/'
 athena_connection_string = f"awsathena+rest://@{ATHENA_URL}:443/{ATHENA_DATABASE}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}" # /&work_group={athena_wkgrp}"
 engine = create_engine(athena_connection_string, echo=True)
 db = SQLDatabase(engine)
@@ -244,13 +244,13 @@ def check_readiness(state: GraphState) -> GraphState:
     print(state)
     question = state["question"]
     sample_queries = state["sample_queries"]
-    table_details = state.get("table_details", "")
-
+    table_details = "cur.hourly_view_all" # state.get("table_details", "") 
+    ## TODO: table (view) 선택 과정 추가
+    ## TODO: 새로운 노드 추가하기 -> get_relevant_columns: 적절한 column을 vector 검색해 매핑
+    
     # sys_prompt_template = "You are a skilled database engineer who writes SQL queries for user questions. Your task is to determine whether it's possible to write an SQL query for the user's question based on the given database information."
     # usr_prompt_template = "Determine if sufficient information has been provided to generate an SQL query for the question. Respond with 'Ready' if there's enough information, or 'Not Ready' if the information is insufficient. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details} \n\n Skip the preamble or explaination. Only provide 'Ready' or 'Not Ready'"    
     
-    ## TODO: table_details 내용 빼고, hourly_view_all 에서만 검색하도록 하기
-    ## TODO: 새로운 노드 추가하기 -> get_relevant_columns: CUR 공식 문서(OpenSearch) 기반으로 적절한 column을 검색해 매핑
     sys_prompt_template = """당신은 사용자 질문에 대한 SQL 쿼리 작성 가능 여부를 판단하는 시스템입니다. 
     오직 'Ready' 또는 'Not Ready' 중 하나로만 응답해야 합니다.
 
@@ -265,7 +265,7 @@ def check_readiness(state: GraphState) -> GraphState:
     {question}\n
     #샘플 쿼리:
     {sample_queries}\n
-    #사용 가능한 테이블: cur.hourly_view_all\n
+    #사용 가능한 테이블: {table_details}\n
     응답 (Ready 또는 Not Ready 중 하나만):"""
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
     readiness = converse_with_bedrock(sys_prompt, usr_prompt)
@@ -284,8 +284,7 @@ def get_relevant_tables(state: GraphState) -> GraphState:
     page_contents = [doc.page_content for doc in tables if doc is not None]
     table_inputs = [json.loads(content)['table_summary'] for content in page_contents]
 
-    sys_prompt_template = """당신은 사용자 요청에 맞는 SQL 쿼리를 작성하는 유능한 데이터베이스 엔지니어입니다. 
-    당신의 임무는 SQL 쿼리 작성에 필요한 테이블을 선택하는 것입니다."""
+    sys_prompt_template = """당신은 사용자 요청에 맞는 SQL 쿼리를 작성하는 유능한 데이터베이스 엔지니어입니다. 당신의 임무는 SQL 쿼리 작성에 필요한 테이블을 선택하는 것입니다."""
     usr_prompt_template = """사용자 요청에 맞는 SQL 쿼리를 생성하기 위해 필요한 테이블을 선택하여, 이를 중요도 순서로 정렬한 후 인덱스 번호(0부터 시작)로 응답하세요. 요구한 사항 외의 설명을 절대 추가하지 마세요.
     \n\n #질문: {question}\n\n #테이블 정보:\n {table_inputs}\n\n #형식: {csv_list_response_format}""" #사용자 요청에 관련된 테이블이 없으면 빈 목록("")으로 응답하세요.
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, table_inputs=table_inputs, csv_list_response_format=csv_list_response_format)
@@ -353,7 +352,6 @@ initial_query_state = {
         "hint": ""
     }
 }
-
 
 def generate_query(state: GraphState) -> GraphState:
     print("Current state:", state) 
@@ -448,25 +446,27 @@ def handle_failure(state: GraphState) -> GraphState:
     query_state = copy.deepcopy(state["query_state"])
     query = query_state['query']
     message = query_state['error']['message']
-    sys_prompt_template = "You are a skilled database engineer who handles SQL query failures. Your task is to identify the cause of failure for the given SQL query and determine the next steps for problem resolution."
+    sys_prompt_template = """You are a skilled database engineer who handles SQL query failures. 
+    Your task is to identify the cause of failure for the given SQL query and determine the next steps for problem resolution.
+    """
     usr_prompt_template = """Based on the failure message of the given SQL query, provide one of the following causes (`failure_type`) along with a clue for resolution (`hint`).
-Here are examples of failure_type choices:
-Inaccurate query syntax: `syntax_check`
-Schema mismatch (no such table or column): `schema_check`
-External DB factors (permissions, connection issues, etc.): `stop`
-Temporary DB malfunction (query re-execution needed): `retry`
+    Here are examples of failure_type choices:
+    Inaccurate query syntax: `syntax_check`
+    Schema mismatch (no such table or column): `schema_check`
+    External DB factors (permissions, connection issues, etc.): `stop`
+    Temporary DB malfunction (query re-execution needed): `retry`
 
-#Failed query: {query}
+    #Failed query: {query}
 
-#Failure message: {message}
+    #Failure message: {message}
 
-#Format: 
-{{
-    "failure_type": "<one of the failure types mentioned above>",
-    "hint": "<brief explanation or suggestion for resolution>"
-}}
+    #Format: 
+    {{
+        "failure_type": "<one of the failure types mentioned above>",
+        "hint": "<brief explanation or suggestion for resolution>"
+    }}
 
-Skip the preamble and only provide the valid JSON document."""
+    Skip the preamble and only provide the valid JSON document."""
 
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, query=query, message=message)
     result = converse_with_bedrock(sys_prompt, usr_prompt)
@@ -489,8 +489,15 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     question = state["question"]
     query = query_state["query"]
     message = query_state['error']['message']
-    sys_prompt_template = "You are an expert SQL query troubleshooter. Your task is to analyze failed queries and suggest relevant keywords for schema exploration to resolve the issue."
-    usr_prompt_template = """Given a user question, a failed SQL query, and an error message, provide 3-5 relevant keywords or phrases for database schema exploration. These should help in finding the correct table and column names to fix the query.\n\n#User question: {question}\n\n#Failed query:\n{query}\n\n#Error message:\n{message}\n\nRespond only with a comma-separated list of keywords or short phrases, without any additional text or explanation.\n\n#Format: {csv_list_response_format}"""
+    sys_prompt_template = "당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 스키마 탐색에 관련된 키워드를 제안하는 것입니다."
+    usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 
+    이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
+    #사용자의 질문: {question}\n\n
+    #실패한 SQL 쿼리: {query}\n\n
+    #오류 메시지: {message}\n\n
+    추가 텍스트나 설명 없이 쉼표로 구분된 키워드 목록이나 짧은 문구로만 응답하세요.\n\n
+    #Format: {csv_list_response_format}"""
+    # Given a user question, a failed SQL query, and an error message, provide 3-5 relevant keywords or phrases for database schema exploration. These should help in finding the correct table and column names to fix the query.\n\n
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, message=message, csv_list_response_format=csv_list_response_format)
     keywords = converse_with_bedrock(sys_prompt, usr_prompt)
     return keywords
@@ -504,7 +511,7 @@ def next_step_by_next_action(state:GraphState) -> GraphState:
 ################## Answer generation ##################
 def get_general_answer(state: GraphState) -> GraphState:
     question = state["question"]
-    sys_prompt_template = "You are a capable assistant who answers general questions from users. If you don't know the answer to a question, admit that you don't know."
+    sys_prompt_template = "사용자의 일반적인 질문에 답하는 유능한 어시스턴트입니다. 질문에 대한 답을 모르면, 솔직하게 모른다고 인정하세요. 한국어로 답변하세요."
     usr_prompt_template = "#Question: {question}"
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
@@ -634,15 +641,15 @@ def print_graph_results(app, query: str):
                         current_node = key
                         with progress_container:
                             if key == "analyze_intent":
-                                st.info("🤔 Analyzing your question...")
+                                st.info("🤔 질문을 분석하고 있습니다...")
                             elif key == "get_sample_queries":
-                                st.info("🔍 Finding similar queries...")
+                                st.info("🔍 비슷한 쿼리를 찾고 있습니다...")
                             elif key == "generate_query":
-                                st.info("⚙️ Generating SQL query...")
+                                st.info("⚙️ SQL 쿼리를 생성하고 있습니다...")
                             elif key == "execute_query":
-                                st.info("🚀 Executing query...")
+                                st.info("🚀 생성한 쿼리를 실행합니다...")
                             elif key == "generate_answer":
-                                st.info("📝 Preparing response...")
+                                st.info("📝 응답을 생성하고 있습니다...")
                     
                     # 최종 답변 처리
                     if 'answer' in value:
@@ -693,25 +700,25 @@ def print_graph_results_with_details(app, query: str):
                             
                             # 현재 진행 중인 노드 표시
                             if key == "analyze_intent":
-                                st.info("🤔 Analyzing your question...")
+                                st.info("🤔 질문을 분석하고 있습니다...")
                                 node_results[key] = ("🤔", "Question Analysis", value)
                             elif key == "get_sample_queries":
-                                st.info("🔍 Finding similar queries...")
+                                st.info("🔍 비슷한 쿼리를 찾고 있습니다...")
                                 formatted_queries = "\n\n".join([
                                     f"Query: {q['query']}\nContext: {q['input']}"
                                     for q in value.get('sample_queries', [])
                                 ])
                                 node_results[key] = ("🔍", "Similar Queries", formatted_queries)
                             elif key == "generate_query":
-                                st.info("⚙️ Generating SQL query...")
+                                st.info("⚙️ SQL 쿼리를 생성하고 있습니다...")
                                 node_results[key] = ("⚙️", "Generated SQL Query", 
                                                    value.get('query_state', {}).get('query', ''))
                             elif key == "execute_query":
-                                st.info("🚀 Executing query...")
+                                st.info("🚀 생성한 쿼리를 실행합니다...")
                                 node_results[key] = ("🚀", "Query Execution Results", 
                                                    value.get('query_state', {}))
                             elif key == "generate_answer":
-                                st.info("📝 Preparing response...")
+                                st.info("📝 응답을 생성하고 있습니다...")
                                 node_results[key] = ("📝", "Final Response", value)
                                 
                     if 'answer' in value:
@@ -745,7 +752,7 @@ def print_graph_results_with_details(app, query: str):
 boto3_client = init_boto3_client(region_name)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
 app = build_langgraph_workflow()
-# normalizer = ddb.ServiceNameNormalizer()
+# normalizer = ddb.ServiceNameNormalizer() 
 
 ################## chatbot ui ##################
 if "messages" not in st.session_state:
@@ -765,9 +772,7 @@ if query:
     # UI에 출력
     st.chat_message("user").write(query)
 
-    # query = normalizer.process_text(query)
-    # st.chat_message("assistant").write(query)
-
+    # print_graph_results(app, query=query)
     print_graph_results_with_details(app, query=query)
 
     # Session 메세지 저장

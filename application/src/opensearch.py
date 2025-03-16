@@ -4,7 +4,7 @@ import yaml
 import boto3
 import time
 import streamlit as st
-from opensearchpy import OpenSearch, RequestsHttpConnection, AWSV4SignerAuth
+from opensearchpy import OpenSearch, RequestsHttpConnection
 from .common_utils import sample_query_indexing, schema_desc_indexing
 from collections import namedtuple
 from dotenv import load_dotenv
@@ -15,12 +15,12 @@ Document = namedtuple('Document', ['page_content', 'metadata'])
 class OpenSearchClient:
     def __init__(self, region_name, index_name, mapping_name, vector, text, output):
         config = self.load_opensearch_config()
-        pm = parameter_store('us-west-2')
+        pm = parameter_store('us-east-1')
 
         credentials = boto3.Session().get_credentials()
-        auth = (pm.get_params(key="t2s-opensearch_user_id", enc=False), pm.get_params(key="t2s-opensearch_user_password", enc=True)) #AWSV4SignerAuth(credentials, region_name, 'aoss')
+        auth = (pm.get_params(key="opensearch_user_id", enc=False), pm.get_params(key="opensearch_user_password", enc=True)) #AWSV4SignerAuth(credentials, region_name, 'aoss')
 
-        collection_endpoint = pm.get_params(key="t2s-opensearch_domain_endpoint", enc=False) # config['COLLECTION_ENDPOINT']
+        collection_endpoint = pm.get_params(key="opensearch_domain_endpoint", enc=False) # config['COLLECTION_ENDPOINT']
         host = collection_endpoint.replace("https://", "").split(':')[0]
 
         self.index_name = index_name
