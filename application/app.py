@@ -20,7 +20,7 @@ st.title("FinOps Text2SQL Demo 💸")
 st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
 
 boto_session = boto3.Session()
-region_name = boto_session.region_name
+region_name = "us-east-1" #boto_session.region_name
 
 HAIKU = "us.anthropic.claude-3-haiku-20240307-v1:0" # HAIKU35 = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
