@@ -2,6 +2,7 @@ import streamlit as st
 import boto3
 import json
 import copy
+import re
 from typing import TypedDict
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -244,7 +245,7 @@ def check_readiness(state: GraphState) -> GraphState:
     print(state)
     question = state["question"]
     sample_queries = state["sample_queries"]
-    table_details = "cur.hourly_view_all" # state.get("table_details", "") 
+    table_details = state.get("table_details", "") 
     ## TODO: table (view) 선택 과정 추가
     ## TODO: 새로운 노드 추가하기 -> get_relevant_columns: 적절한 column을 vector 검색해 매핑
     
@@ -302,7 +303,7 @@ def get_relevant_tables(state: GraphState) -> GraphState:
         return GraphState(tables=[], table_names=[])
 
 def describe_schema(state: GraphState) -> GraphState:
-    table_names = state["table_names"]
+    table_names = ['cur.hourly_view_all'] #state["table_names"] #['cur.hourly_view_all', 'cur.summary_view_all'] 
     table_details = []
     inspector = inspect(engine)
     
@@ -333,6 +334,34 @@ def describe_schema(state: GraphState) -> GraphState:
                     
     return GraphState(table_details=table_details)
 
+def describe_schema_from_view(state: GraphState) -> GraphState:
+    view_names = ['cur.hourly_view_all'] #state["table_names"] #['cur.hourly_view_all', 'cur.summary_view_all'] 
+    table_details = ['cur.hourly_view_all']
+    
+    with engine.connect() as connection:
+        for view_name in view_names:
+            columns_query = f"SHOW COLUMNS FROM {view_name}"
+            columns_result = connection.execute(text(columns_query))
+            columns = [{"name": row[0], "type": row[1]} for row in columns_result]
+            
+            create_view_sql = f"/* View structure for {view_name} */\n"
+            create_view_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
+            
+            sample_query = text(f"SELECT * FROM {view_name} LIMIT 5")
+            result = connection.execute(sample_query)
+            sample_data = [dict(zip(result.keys(), row)) for row in result]
+            
+            table_detail = {
+                "table": view_name,
+                "cols": {col['name']: str(col['type']) for col in columns},
+                "create_table_sql": create_view_sql,
+                "sample_data": str(sample_data) if sample_data else "No sample data available"
+            }
+            
+            table_details.append(table_detail)
+                    
+    return GraphState(table_details=table_details)
+
 def next_step_by_intent(state: GraphState) -> GraphState:
     return state["intent"]
 
@@ -353,36 +382,114 @@ initial_query_state = {
     }
 }
 
+def get_valid_service_codes():
+    return {
+        'AmazonEC2',
+        'AmazonRDS', 
+        'AWSKMS',
+        'AmazonS3',
+        'AWSLambda',
+        'AmazonDynamoDB',
+        # Add other valid service codes as needed
+    }
+
+def validate_and_fix_query(query: str, valid_services: set) -> tuple[str, bool, str]:
+    # Find all service names in WHERE service = 'X' or service LIKE 'X' patterns
+    service_patterns = [
+        r"service\s*=\s*'([^']*)'",
+        r"service\s*LIKE\s*'([^']*)'",
+        r"service\s*IN\s*\(([^)]*)\)"
+    ]
+    
+    found_services = set()
+    invalid_services = set()
+    
+    for pattern in service_patterns:
+        matches = re.finditer(pattern, query, re.IGNORECASE)
+        for match in matches:
+            if 'IN' in pattern:
+                # Handle IN clause separately
+                services_in_clause = [s.strip().strip("'") for s in match.group(1).split(',')]
+                for service in services_in_clause:
+                    if service not in valid_services:
+                        invalid_services.add(service)
+                    found_services.add(service)
+            else:
+                service_name = match.group(1)
+                if service_name not in valid_services:
+                    invalid_services.add(service_name)
+                found_services.add(service_name)
+    
+    if invalid_services:
+        error_msg = f"Invalid service names found: {', '.join(invalid_services)}. Valid services are: {', '.join(valid_services)}"
+        return query, False, error_msg
+    
+    return query, True, ""
+
 def generate_query(state: GraphState) -> GraphState:
     print("Current state:", state) 
     dialect = DIALECT
     new_query_state = copy.deepcopy(initial_query_state)
     question = state["question"]
     sample_queries = state["sample_queries"]
-    table_details = "cur.hourly_view_all" #state["table_details"]
-
+    table_details = ['cur.hourly_view_all']
+    
     query_state = state.get("query_state", {}) or {}
     error_info = query_state.get("error", {}) or {}
     hint = error_info.get("hint", "None")
     
     # sys_prompt_template = "You are a skilled database engineer who writes {dialect} SQL queries in response to user questions. Your task is to create accurate SQL queries that match the user's question based on the given database information."
     # usr_prompt_template = "Based on the following sample queries, schema information, and past failure history, create a query that matches the DB dialect. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details}\n\n #Additional information (past failure history, additional acquired information, etc.):\n {hint}"    
-    sys_prompt_template = """당신은 사용자 질문에 대해 {dialect} SQL 쿼리를 작성하는 전문 데이터베이스 엔지니어입니다. 오직 SQL 쿼리만을 생성해야 하며, 어떠한 설명이나 추가 텍스트도 포함해서는 안 됩니다."""
-    usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. 어떠한 설명이나 서론 없이 오직 SQL 쿼리 문장만 제공하세요.
+
+    sys_prompt_template = """당신은 {dialect} SQL 쿼리를 작성하는 전문 데이터베이스 엔지니어입니다. 
+    AWS 서비스 이름을 사용할 때는 정확한 서비스 코드를 사용해야 합니다 (예: 'AmazonEC2', 'AWSKMS').
+    오직 SQL 쿼리만을 생성해야 하며, 어떠한 설명이나 추가 텍스트도 포함해서는 안 됩니다."""
+    
+    usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. 
+    WHERE절에서 service 조건을 사용할 때는 반드시 정확한 AWS 서비스 코드를 사용하세요.
+    예시: WHERE service = 'AmazonEC2' (O), WHERE service = 'EC2' (X)
+    
     #질문:
-    {question}\n
+    {question}
+    
     #샘플 쿼리:
-    {sample_queries}\n
+    {sample_queries}
+    
     #사용 가능한 테이블:
-    {table_details}\n
-    #추가 정보 (과거 실패 이력, 추가 획득 정보 등):
-    {hint}\n
+    {table_details}
+    
+    #추가 정보:
+    {hint}
+    
     응답 (SQL 쿼리만):"""
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, dialect=dialect, sample_queries=sample_queries, table_details=table_details, hint=hint)
+    
+    sys_prompt, usr_prompt = create_prompt(
+        sys_prompt_template, 
+        usr_prompt_template, 
+        question=question, 
+        dialect=dialect, 
+        sample_queries=sample_queries, 
+        table_details=table_details, 
+        hint=hint
+    )
+    
     generated_query = converse_with_bedrock(sys_prompt, usr_prompt)
-
-    new_query_state["query"] = generated_query
-
+    
+    # Validate the generated query
+    valid_services = get_valid_service_codes()
+    validated_query, is_valid, error_message = validate_and_fix_query(generated_query, valid_services)
+    
+    if not is_valid:
+        new_query_state["status"] = "error"
+        new_query_state["error"] = {
+            "code": "E03",
+            "message": error_message,
+            "failed_step": "generation",
+            "hint": "Please use valid AWS service codes in the WHERE clause"
+        }
+    else:
+        new_query_state["query"] = validated_query
+    
     return GraphState(query_state=new_query_state)
 
 def validate_query(state: GraphState) -> GraphState:
@@ -583,7 +690,7 @@ def build_langgraph_workflow():
     workflow.add_node("get_sample_queries", get_sample_queries)
     workflow.add_node("check_readiness", check_readiness)
     workflow.add_node("get_relevant_tables", get_relevant_tables)
-    workflow.add_node("describe_schema", describe_schema)
+    workflow.add_node("describe_schema", describe_schema_from_view)
 
     # SubGraph2 Nodes - Query Generation & Execution
     workflow.add_node("generate_query", generate_query)
@@ -729,7 +836,7 @@ def print_graph_results_with_details(app, query: str):
                                 if key == "analyze_intent":
                                     with st.expander("🤔 질문을 분석하고 있습니다...", expanded=False):  # expanded=False로 변경
                                         st.write({"analysis": value})
-                                    node_results[key] = ("🤔", "Question Analysis", {"analysis": value})
+                                    node_results[key] = ("🤔", "Question Analysis", value)
                                 elif key == "get_sample_queries":
                                     if isinstance(value, dict) and 'sample_queries' in value:
                                         formatted_queries = "\n\n".join([
@@ -738,23 +845,27 @@ def print_graph_results_with_details(app, query: str):
                                         ])
                                     else:
                                         formatted_queries = str(value)
-                                    
-                                    with st.expander("🔍 비슷한 쿼리를 찾고 있습니다...", expanded=False):  # expanded=False로 변경
+                                    with st.expander("🔍 비슷한 쿼리를 찾고 있습니다...", expanded=False):
                                         st.write({"queries": formatted_queries})
                                     node_results[key] = ("🔍", "Similar Queries", {"queries": formatted_queries})
+                                elif key == "describe_schema": 
+                                    schema_description = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("👀 스키마를 분석하고 있습니다...", expanded=False):
+                                        st.write({"schema": schema_description})
+                                    node_results[key] = ("👀", "Describe Schema", {"schema": schema_description})
                                 elif key == "generate_query":
                                     query_value = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
-                                    with st.expander("⚙️ SQL 쿼리를 생성하고 있습니다...", expanded=False):  # expanded=False로 변경
-                                        st.write({"query": query_value})
-                                    node_results[key] = ("⚙️", "Generated SQL Query", {"query": query_value})
+                                    with st.expander("⚙️ SQL 쿼리를 생성하고 있습니다...", expanded=False):
+                                        st.code(str(query_value))
+                                    node_results[key] = ("⚙️", "Generated SQL Query", query_value)
                                 elif key == "execute_query":
                                     execution_result = value.get('query_state', {}) if isinstance(value, dict) else {"result": str(value)}
-                                    with st.expander("🚀 생성한 쿼리를 실행합니다...", expanded=False):  # expanded=False로 변경
+                                    with st.expander("🚀 생성한 쿼리를 실행합니다...", expanded=False):
                                         st.write(execution_result)
                                     node_results[key] = ("🚀", "Query Execution Results", execution_result)
                                 elif key == "generate_answer":
                                     answer_value = {"answer": value} if isinstance(value, str) else value
-                                    with st.expander("📝 응답을 생성하고 있습니다...", expanded=False):  # expanded=False로 변경
+                                    with st.expander("📝 응답을 생성하고 있습니다...", expanded=False):
                                         st.write(answer_value)
                                     node_results[key] = ("📝", "Final Response", answer_value)
                     
