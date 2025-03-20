@@ -22,13 +22,14 @@ st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드�
 
 boto_session = boto3.Session()
 region_name = "us-west-2" #boto_session.region_name
+athena_region_name = "us-east-1"
 
 HAIKU = "us.anthropic.claude-3-haiku-20240307-v1:0" # HAIKU35 = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
 SONNET = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
 NOVA_PRO = "us.amazon.nova-pro-v1:0"
 llm_model = SONNET #NOVA_PRO # TODO: 프롬프트 개선 작업이 필요해서 우선은 Sonnet으로 테스트 진행
 
-ATHENA_URL = f"athena.us-east-1.amazonaws.com" 
+ATHENA_URL = f"athena.{athena_region_name}.amazonaws.com" 
 ATHENA_DATABASE = 'cur'
 ATHENA_RESULTS_S3_BUCKET = 's3://athena-query-result-finops-cost-and-usage/'
 athena_connection_string = f"awsathena+rest://@{ATHENA_URL}:443/{ATHENA_DATABASE}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}" # /&work_group={athena_wkgrp}"
