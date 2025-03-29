@@ -551,34 +551,35 @@ def execute_query(state: GraphState) -> GraphState:
     return GraphState(query_state=query_state)
     
 def handle_failure(state: GraphState) -> GraphState:
+    st.write(state['query_state']) ## TODO: delete
     query_state = copy.deepcopy(state["query_state"])
     query = query_state['query']
     message = query_state['error']['message']
-    sys_prompt_template = """You are a skilled database engineer who handles SQL query failures. 
-    Your task is to identify the cause of failure for the given SQL query and determine the next steps for problem resolution.
-    """
-    usr_prompt_template = """Based on the failure message of the given SQL query, provide one of the following causes (`failure_type`) along with a clue for resolution (`hint`).
-    Here are examples of failure_type choices:
-    Inaccurate query syntax: `syntax_check`
-    Schema mismatch (no such table or column): `schema_check`
-    External DB factors (permissions, connection issues, etc.): `stop`
-    Temporary DB malfunction (query re-execution needed): `retry`
+    st.write(state['query_state']) ## TODO: delete
+    sys_prompt_template = """당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 
+    당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 다음 단계를 결정하는 것입니다."""
 
-    #Failed query: {query}
+    usr_prompt_template = """
+    실패한 SQL 쿼리의 오류 메시지를 바탕으로 다음 중 하나의 실패 원인(`failure_type`)과 해결을 위한 힌트(`hint`)를 제공하세요.\n
+    실패 유형 예시:
+    - 부정확한 쿼리 문법: `syntax_check`
+    - 스키마 불일치 (테이블이나 컬럼이 없음): `schema_check`
+    - 외부 DB 요인 (권한, 연결 문제 등): `stop`
+    - 일시적인 DB 오류 (쿼리 재실행 필요): `retry`
 
-    #Failure message: {message}
-
-    #Format: 
+    #실패한 쿼리: {query}\n
+    #오류 메시지: {message}\n
+    #응답 형식: \n
     {{
-        "failure_type": "<one of the failure types mentioned above>",
-        "hint": "<brief explanation or suggestion for resolution>"
+        "failure_type": "<위에서 언급된 실패 유형 중 하나>",
+        "hint": "<해결을 위한 간단한 설명이나 제안>"
     }}
-
-    Skip the preamble and only provide the valid JSON document."""
+    \n
+    서문이나 추가 설명 없이 유효한 JSON 문서만 제공하세요."""
 
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, query=query, message=message)
     result = converse_with_bedrock(sys_prompt, usr_prompt)
-
+    st.write(result) ## TODO: delete
     try:
         json_result = json.loads(result)
         failure_type = json_result.get("failure_type", "unknown")
