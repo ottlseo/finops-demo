@@ -336,30 +336,64 @@ def describe_schema(state: GraphState) -> GraphState:
     return GraphState(table_details=table_details)
 
 def describe_schema_from_view(state: GraphState) -> GraphState:
-    view_names = ['cur.hourly_view_all'] #state["table_names"] #['cur.hourly_view_all', 'cur.summary_view_all'] 
+    view_names = ['cur.hourly_view_all']
     table_details = ['cur.hourly_view_all']
     
     with engine.connect() as connection:
         for view_name in view_names:
-            columns_query = f"SHOW COLUMNS FROM {view_name}"
-            columns_result = connection.execute(text(columns_query))
-            columns = [{"name": row[0], "type": row[1]} for row in columns_result]
-            
-            create_view_sql = f"/* View structure for {view_name} */\n"
-            create_view_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
-            
-            sample_query = text(f"SELECT * FROM {view_name} LIMIT 5")
-            result = connection.execute(sample_query)
-            sample_data = [dict(zip(result.keys(), row)) for row in result]
-            
-            table_detail = {
-                "table": view_name,
-                "cols": {col['name']: str(col['type']) for col in columns},
-                "create_table_sql": create_view_sql,
-                "sample_data": str(sample_data) if sample_data else "No sample data available"
-            }
-            
-            table_details.append(table_detail)
+            try:
+                # SHOW COLUMNS 쿼리 실행
+                columns_query = f"SHOW COLUMNS FROM {view_name}"
+                columns_result = connection.execute(text(columns_query))
+                
+                # 결과의 실제 구조를 로깅하여 확인
+                first_row = columns_result.first()
+                if first_row is None:
+                    print(f"No columns found for {view_name}")
+                    continue
+                
+                # 컬럼 정보 추출 (에러 처리 추가)
+                columns = []
+                for row in columns_result:
+                    try:
+                        # row의 구조를 출력하여 확인
+                        print(f"Column row structure: {row}")
+                        
+                        # 첫 번째 필드를 컬럼 이름으로, 두 번째 필드를 타입으로 가정
+                        column_info = {
+                            "name": str(row[0]) if row[0] is not None else "unknown",
+                            "type": str(row[1]) if len(row) > 1 and row[1] is not None else "unknown"
+                        }
+                        columns.append(column_info)
+                    except Exception as e:
+                        print(f"Error processing column row: {e}")
+                        continue
+                
+                # 테이블 정보 생성
+                create_view_sql = f"/* View structure for {view_name} */\n"
+                create_view_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
+                
+                # 샘플 데이터 조회
+                try:
+                    sample_query = text(f"SELECT * FROM {view_name} LIMIT 5")
+                    result = connection.execute(sample_query)
+                    sample_data = [dict(zip(result.keys(), row)) for row in result]
+                except Exception as e:
+                    print(f"Error fetching sample data: {e}")
+                    sample_data = []
+                
+                table_detail = {
+                    "table": view_name,
+                    "cols": {col['name']: col['type'] for col in columns},
+                    "create_table_sql": create_view_sql,
+                    "sample_data": str(sample_data) if sample_data else "No sample data available"
+                }
+                
+                table_details.append(table_detail)
+                
+            except Exception as e:
+                print(f"Error describing view {view_name}: {e}")
+                continue
                     
     return GraphState(table_details=table_details)
 
