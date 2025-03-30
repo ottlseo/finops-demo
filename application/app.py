@@ -561,8 +561,23 @@ def validate_query(state: GraphState) -> GraphState:
             query_state["query"] = query
             return GraphState(query_state=query_state)
 
-    sys_prompt_template = "You are a database expert who reviews existing {dialect} SQL queries in response to user questions and optimizes them when necessary. Your task is to examine the query's coherence and potential for optimization based on the given SQL query and additional information, and provide a final query based on this analysis." 
-    usr_prompt_template = "Please add aliases to the query to match the user's question. It is not allowed to add tables or columns that were not used in the original SQL query. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Existing query:\n {query}\n\n #Query plan:\n {query_plan}"    
+    sys_prompt_template = """당신은 사용자 질문에 대한 {dialect} SQL 쿼리를 검토하고 필요한 경우 최적화하는 데이터베이스 전문가입니다. 
+    주어진 SQL 쿼리와 추가 정보를 바탕으로 쿼리의 일관성과 최적화 가능성을 검토하고, 이를 기반으로 최종 쿼리를 제공하는 것이 당신의 임무입니다."""
+
+    usr_prompt_template = """사용자의 질문에 맞게 쿼리에 alias를 추가하세요. 
+    원본 SQL 쿼리에서 사용되지 않은 테이블이나 컬럼을 추가하는 것은 허용되지 않습니다.
+    서문이나 설명 없이 생성된 SQL 쿼리문만 제공하세요.
+
+    #질문: {question}
+
+    #기존 쿼리:
+    {query}
+
+    #쿼리 실행 계획:
+    {query_plan}"""        
+    # sys_prompt_template = "You are a database expert who reviews existing {dialect} SQL queries in response to user questions and optimizes them when necessary. Your task is to examine the query's coherence and potential for optimization based on the given SQL query and additional information, and provide a final query based on this analysis." 
+    # usr_prompt_template = "Please add aliases to the query to match the user's question. It is not allowed to add tables or columns that were not used in the original SQL query. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Existing query:\n {query}\n\n #Query plan:\n {query_plan}"    
+
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, dialect=dialect, query=query, query_plan=query_plan)
     validated_query = converse_with_bedrock(sys_prompt, usr_prompt)
     query_state["query"] = validated_query
@@ -585,11 +600,9 @@ def execute_query(state: GraphState) -> GraphState:
     return GraphState(query_state=query_state)
     
 def handle_failure(state: GraphState) -> GraphState:
-    st.write(state['query_state']) ## TODO: delete
     query_state = copy.deepcopy(state["query_state"])
     query = query_state['query']
     message = query_state['error']['message']
-    st.write(state['query_state']) ## TODO: delete
     sys_prompt_template = """당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 
     당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 다음 단계를 결정하는 것입니다."""
 
@@ -613,7 +626,6 @@ def handle_failure(state: GraphState) -> GraphState:
 
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, query=query, message=message)
     result = converse_with_bedrock(sys_prompt, usr_prompt)
-    st.write(result) ## TODO: delete
     try:
         json_result = json.loads(result)
         failure_type = json_result.get("failure_type", "unknown")
@@ -633,7 +645,6 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     query = query_state["query"]
     message = query_state['error']['message']
     
-    # 키워드 검색 결과를 얻습니다
     sys_prompt_template = "당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 스키마 탐색에 관련된 키워드를 제안하는 것입니다."
     usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 
     이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
@@ -641,7 +652,7 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     #실패한 SQL 쿼리: {query}\n\n
     #오류 메시지: {message}\n\n
     추가 텍스트나 설명 없이 쉼표로 구분된 키워드 목록이나 짧은 문구로만 응답하세요.\n\n
-    #Format: {csv_list_response_format}"""
+    #Format: {csv_list_response_format}""" ## TODO: update prompt
     
     sys_prompt, usr_prompt = create_prompt(
         sys_prompt_template, 
@@ -819,6 +830,10 @@ def print_graph_results(app, query: str):
                                 st.info("🔍 비슷한 쿼리를 찾고 있습니다...")
                             elif key == "generate_query":
                                 st.info("⚙️ SQL 쿼리를 생성하고 있습니다...")
+                            elif key == "get_relevant_columns":
+                                st.info("🔍 관련된 스키마 정보를 탐색하고 있습니다...")
+                            elif key == "handle_failure":
+                                st.info("✅ 오류를 분석하고 있습니다...")
                             elif key == "execute_query":
                                 st.info("🚀 생성한 쿼리를 실행합니다...")
                             elif key == "generate_answer":
@@ -870,25 +885,37 @@ def print_graph_results_with_details(app, query: str):
                             current_node = key
                             with progress_container:
                                 if key == "analyze_intent":
+                                    intent = value.get('intent', {}) if isinstance(value, dict) else str(value)
                                     with st.expander("🤔 질문을 분석하고 있습니다...", expanded=False):  # expanded=False로 변경
-                                        st.write({"analysis": value})
-                                    node_results[key] = ("🤔", "Question Analysis", value)
+                                        st.write(intent)
+                                    node_results[key] = ("🤔", "Question Analysis", intent)
                                 elif key == "get_sample_queries":
-                                    if isinstance(value, dict) and 'sample_queries' in value:
-                                        formatted_queries = "\n\n".join([
-                                            f"Query: {q['query']}\nContext: {q['input']}"
-                                            for q in value['sample_queries']
-                                        ])
-                                    else:
-                                        formatted_queries = str(value)
+                                    # if isinstance(value, dict) and 'sample_queries' in value:
+                                    #     formatted_queries = "\n\n".join([
+                                    #         f"Query: {q['query']}\nContext: {q['input']}"
+                                    #         for q in value['sample_queries']
+                                    #     ])
+                                    # else:
+                                    #     formatted_queries = str(value)
+                                    sample_queries = value.get('sample_queries', {}) if isinstance(value, dict) else str(value)
                                     with st.expander("🔍 비슷한 쿼리를 찾고 있습니다...", expanded=False):
-                                        st.write({"queries": formatted_queries})
-                                    node_results[key] = ("🔍", "Similar Queries", {"queries": formatted_queries})
+                                        st.write(sample_queries)
+                                    node_results[key] = ("🔍", "Similar Queries", sample_queries)
                                 elif key == "describe_schema": 
                                     schema_description = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
                                     with st.expander("👀 스키마를 분석하고 있습니다...", expanded=False):
-                                        st.write({"schema": schema_description})
-                                    node_results[key] = ("👀", "Describe Schema", {"schema": schema_description})
+                                        st.write(schema_description)
+                                    node_results[key] = ("👀", "Describe Schema", schema_description)
+                                elif key == "get_relevant_columns":
+                                    relevant_schema = value.get('query_state', {}).get('relevant_columns', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("🔍 관련된 스키마 정보를 탐색하고 있습니다...", expanded=False):
+                                        st.write(relevant_schema)
+                                    node_results[key] = ("👀", "Describe Relevant Schema", relevant_schema)
+                                elif key == "handle_failure":
+                                    error_message = value.get('query_state', {}).get('hint', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("✅ 오류를 분석하고 있습니다...", expanded=False):
+                                        st.write(error_message)
+                                    node_results[key] = ("✅", "Describe Error Message", error_message) 
                                 elif key == "generate_query":
                                     query_value = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
                                     with st.expander("⚙️ SQL 쿼리를 생성하고 있습니다...", expanded=False):
@@ -929,7 +956,6 @@ def print_graph_results_with_details(app, query: str):
             st.session_state.messages.append(
                 {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
             )
-
 
 ################## setting ##################
 
