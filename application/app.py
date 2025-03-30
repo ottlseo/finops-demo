@@ -1,4 +1,4 @@
-import streamlit as st 
+import streamlit as st
 import boto3
 import json
 import copy
@@ -724,6 +724,30 @@ def get_database_answer(state: GraphState) -> GraphState:
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
     return GraphState(answer=answer)
 
+def generate_sample_questions(question: str):
+    sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터에 대해 더 다양한 분석을 할 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
+    질문은 한국어로 작성되어야 하고, 항상 3개의 배열 형태여야 합니다. EC2 서비스 관련 질문만 생성합니다. 이유나 부가 설명은 작성하지 말고 출력 형식을 따르세요.
+    
+    #출력 형식:
+    ["EC2 비용 관련 질문 1", "EC2 비용 관련 질문 2", "EC2 비용 관련 질문 3"]
+    """
+    usr_prompt_template = """
+    #이전질문: {question}
+    """
+    
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)     
+    response = converse_with_bedrock(sys_prompt, usr_prompt) 
+    sample_questions = json.loads(response)
+    
+    # Display buttons for each sample question
+    for sample_q in sample_questions:
+        if st.button(sample_q):
+            st.session_state.messages.append({"role": "user", "content": sample_q})
+            print_graph_results(st.session_state.graph_app, sample_q)
+    
+    st.session_state["recommendation"] = response
+    return response ## TODO : AOS 에서 가져오기
+
 def build_langgraph_workflow():
     workflow = StateGraph(GraphState)
 
@@ -841,8 +865,9 @@ def print_graph_results(app, query: str):
                     
                     # 최종 답변 처리
                     if 'answer' in value:
-                        with response_container:
+                        with response_container:     
                             st.markdown(value['answer'])
+                       
                             # 답변을 세션에 저장
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
@@ -969,6 +994,9 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
     ]
+if "current_recommendations" not in st.session_state:
+    st.session_state.current_recommendations = []
+
 # 지난 답변 출력
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
@@ -982,8 +1010,34 @@ if query:
     # UI에 출력
     st.chat_message("user").write(query)
 
-    # print_graph_results(app, query=query)
-    print_graph_results_with_details(app, query=query)
+    print_graph_results(app, query=query)
+    # print_graph_results_with_details(app, query=query)
+    
+    # 새로운 추천 질문 생성
+    generate_sample_questions(query)
+    # recommendations = generate_sample_questions(query)
+    # try:
+    #     recommendations = json.loads(recommendations)
+    # except:
+    #     recommendations = []
+    
+    # 현재 추천 질문 업데이트
+    # st.session_state.current_recommendations = recommendations
+    
+    # # 각 추천 질문에 대한 버튼 생성
+    # for i, rec in enumerate(st.session_state.current_recommendations):
+    #     btn = st.button(rec, key=f"btn_{i}")
+    #     if btn:
+    #         st.session_state.messages.append({"role": "user", "content": rec})
+    #         st.chat_message("user").write(rec)
+    #         print_graph_results(app, query=rec)
+            
+    #         # 새로운 추천 질문으로 업데이트
+    #         new_recommendations = generate_sample_questions(rec)
+    #         try:
+    #             st.session_state.current_recommendations = json.loads(new_recommendations)
+    #         except:
+    #             st.session_state.current_recommendations = []
 
     # Session 메세지 저장
     # st.session_state.messages.append({"role": "assistant", "content": graph_results})
