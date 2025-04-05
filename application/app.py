@@ -80,10 +80,10 @@ def init_boto3_client(region: str):
     return boto3.client("bedrock-runtime", region_name=region, config=retry_config)
 
 def init_search_resources():  
-    EXAMPLE_QUERIES_INDEX = 'example_queries'
+    EXAMPLE_QUERIES_INDEX = 'sample_queries'
     TABLE_DESCRIPTION_INDEX = 'schema_description'
 
-    sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["input", "query"])
+    sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["sql", "input", "description"])
     table_search_client = OpenSearchClient(region_name=region_name, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
 
     sql_retriever = OpenSearchVectorRetriever(sql_search_client, region_name=region_name, k=20)
@@ -188,9 +188,9 @@ def analyze_intent(state: GraphState) -> GraphState:
     
     return GraphState(intent=intent)
 
-def get_sample_queries(state: GraphState) -> GraphState: # TODO: Hybrid search 구현
+def get_sample_queries(state: GraphState) -> GraphState: 
     question = state["question"]
-    samples = sql_retriever.vector_search(question)
+    samples = sql_retriever.vector_search(question)  # description으로 검색
     page_contents = [json.loads(doc.page_content) for doc in samples]
 
     bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=region_name)
@@ -203,7 +203,7 @@ def get_sample_queries(state: GraphState) -> GraphState: # TODO: Hybrid search �
             "inlineDocumentSource": {
                 "type": "TEXT",
                 "textDocument": {
-                    "text": content['input'],
+                    "text": content['description'], 
                 }
             }
         } for content in page_contents
@@ -234,14 +234,13 @@ def get_sample_queries(state: GraphState) -> GraphState: # TODO: Hybrid search �
     for result in response['results']:
         index = result['index']
         sample_input = page_contents[index]['input']
-        sample_query = page_contents[index]['query']
+        sample_sql = page_contents[index]['sql']  # query를 sql로 변경
         reranked_samples.append({
             'input': sample_input,
-            'query': sample_query,
+            'sql': sample_sql, 
         })
-
     return GraphState(sample_queries=reranked_samples)
-    
+
 def check_readiness(state: GraphState) -> GraphState:
     print(state)
     question = state["question"]
@@ -429,13 +428,11 @@ def get_valid_service_codes():
     }
 
 def validate_and_fix_query(query: str, valid_services: set) -> tuple[str, bool, str]:
-    # Find all service names in WHERE service = 'X' or service LIKE 'X' patterns
     service_patterns = [
         r"service\s*=\s*'([^']*)'",
         r"service\s*LIKE\s*'([^']*)'",
         r"service\s*IN\s*\(([^)]*)\)"
     ]
-    
     found_services = set()
     invalid_services = set()
     
@@ -985,60 +982,20 @@ sql_search_client, table_search_client, sql_retriever, table_retriever = init_se
 app = build_langgraph_workflow()
 # normalizer = ddb.ServiceNameNormalizer() 
 
-initial_sample_questions = [
-        "샘플 질문 1",
-        "샘플 질문 2",
-        "샘플 질문 3"
-]
 ################## chatbot ui ##################
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
     ]
-if "current_suggestions" not in st.session_state:
-    st.session_state.current_suggestions = initial_sample_questions
-if "show_buttons" not in st.session_state:
-    st.session_state.show_buttons = True
-if "button_clicked" not in st.session_state:
-    st.session_state.button_clicked = False
-
-chat_container = st.container()
-with chat_container:
-    for msg in st.session_state.messages:
-        st.chat_message(msg["role"]).write(msg["content"])
-
-input_container = st.container()
-with input_container:
-    # 버튼이 보여져야 하는 경우에만 버튼을 표시
-    if st.session_state.show_buttons and st.session_state.current_suggestions != []:
-        sample_questions = st.session_state.current_suggestions
-        for sample_q in sample_questions:
-            if st.button(sample_q, key=sample_q):  # 각 버튼에 고유 키 추가
-                st.session_state.button_clicked = True
-                st.session_state.show_buttons = False
-                st.session_state.current_suggestions = []
-                st.session_state.current_query = sample_q  # 선택된 질문 저장
-                
-    query = st.chat_input("Search documentation")
     
-    # 버튼 클릭 처리
-    if st.session_state.button_clicked:
-        query = st.session_state.current_query
-        st.session_state.messages.append({"role": "user", "content": query})
-        st.session_state.button_clicked = False
-        
+for msg in st.session_state.messages:
+    st.chat_message(msg["role"]).write(msg["content"])
+
+query = st.chat_input("Search documentation")
+    
 if query:
-    print(query)
-    if not st.session_state.button_clicked: 
-        st.session_state.messages.append({"role": "user", "content": query})    
+    st.session_state.messages.append({"role": "user", "content": query})    
+
+    st.chat_message("user").write(query)
+    print_graph_results_with_details(app, query=query)
     
-    with chat_container:
-        st.chat_message("user").write(query)
-        print_graph_results_with_details(app, query=query)
-    
-    # 새로운 추천 질문 생성 및 버튼 표시 상태 업데이트
-    suggestions = generate_sample_questions(query)
-    print("suggestions:", suggestions)
-    st.session_state.current_suggestions = suggestions
-    print("st.session_state.current_suggestions:", st.session_state.current_suggestions)
-    st.session_state.show_buttons = True
