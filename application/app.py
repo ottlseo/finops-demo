@@ -738,15 +738,8 @@ def generate_sample_questions(question: str):
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)     
     response = converse_with_bedrock(sys_prompt, usr_prompt) 
     sample_questions = json.loads(response)
-    
-    # Display buttons for each sample question
-    for sample_q in sample_questions:
-        if st.button(sample_q):
-            st.session_state.messages.append({"role": "user", "content": sample_q})
-            print_graph_results(st.session_state.graph_app, sample_q)
-    
-    st.session_state["recommendation"] = response
-    return response ## TODO : AOS 에서 가져오기
+
+    return sample_questions
 
 def build_langgraph_workflow():
     workflow = StateGraph(GraphState)
@@ -976,11 +969,14 @@ def print_graph_results_with_details(app, query: str):
                         else:
                             st.code(str(result))
             
+            st.session_state.show_buttons = True
+            
         except GraphRecursionError as e:
             st.error(f"⚠️ I encountered an error: {str(e)}")
             st.session_state.messages.append(
                 {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
             )
+            st.session_state.show_buttons = True
 
 ################## setting ##################
 
@@ -989,56 +985,60 @@ sql_search_client, table_search_client, sql_retriever, table_retriever = init_se
 app = build_langgraph_workflow()
 # normalizer = ddb.ServiceNameNormalizer() 
 
+initial_sample_questions = [
+        "샘플 질문 1",
+        "샘플 질문 2",
+        "샘플 질문 3"
+]
 ################## chatbot ui ##################
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
     ]
-if "current_recommendations" not in st.session_state:
-    st.session_state.current_recommendations = []
+if "current_suggestions" not in st.session_state:
+    st.session_state.current_suggestions = initial_sample_questions
+if "show_buttons" not in st.session_state:
+    st.session_state.show_buttons = True
+if "button_clicked" not in st.session_state:
+    st.session_state.button_clicked = False
 
-# 지난 답변 출력
-for msg in st.session_state.messages:
-    st.chat_message(msg["role"]).write(msg["content"])
+chat_container = st.container()
+with chat_container:
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).write(msg["content"])
 
-# 유저가 쓴 chat을 query 변수에 담음
-query = st.chat_input("Search documentation")
-if query:
-    # Session에 메세지 저장
-    st.session_state.messages.append({"role": "user", "content": query})
+input_container = st.container()
+with input_container:
+    # 버튼이 보여져야 하는 경우에만 버튼을 표시
+    if st.session_state.show_buttons and st.session_state.current_suggestions != []:
+        sample_questions = st.session_state.current_suggestions
+        for sample_q in sample_questions:
+            if st.button(sample_q, key=sample_q):  # 각 버튼에 고유 키 추가
+                st.session_state.button_clicked = True
+                st.session_state.show_buttons = False
+                st.session_state.current_suggestions = []
+                st.session_state.current_query = sample_q  # 선택된 질문 저장
+                
+    query = st.chat_input("Search documentation")
     
-    # UI에 출력
-    st.chat_message("user").write(query)
-
-    print_graph_results(app, query=query)
-    # print_graph_results_with_details(app, query=query)
-    
-    # 새로운 추천 질문 생성
-    generate_sample_questions(query)
-    # recommendations = generate_sample_questions(query)
-    # try:
-    #     recommendations = json.loads(recommendations)
-    # except:
-    #     recommendations = []
-    
-    # 현재 추천 질문 업데이트
-    # st.session_state.current_recommendations = recommendations
-    
-    # # 각 추천 질문에 대한 버튼 생성
-    # for i, rec in enumerate(st.session_state.current_recommendations):
-    #     btn = st.button(rec, key=f"btn_{i}")
-    #     if btn:
-    #         st.session_state.messages.append({"role": "user", "content": rec})
-    #         st.chat_message("user").write(rec)
-    #         print_graph_results(app, query=rec)
-            
-    #         # 새로운 추천 질문으로 업데이트
-    #         new_recommendations = generate_sample_questions(rec)
-    #         try:
-    #             st.session_state.current_recommendations = json.loads(new_recommendations)
-    #         except:
-    #             st.session_state.current_recommendations = []
-
-    # Session 메세지 저장
-    # st.session_state.messages.append({"role": "assistant", "content": graph_results})
+    # 버튼 클릭 처리
+    if st.session_state.button_clicked:
+        query = st.session_state.current_query
+        st.session_state.messages.append({"role": "user", "content": query})
+        st.session_state.button_clicked = False
         
+if query:
+    print(query)
+    if not st.session_state.button_clicked: 
+        st.session_state.messages.append({"role": "user", "content": query})    
+    
+    with chat_container:
+        st.chat_message("user").write(query)
+        print_graph_results_with_details(app, query=query)
+    
+    # 새로운 추천 질문 생성 및 버튼 표시 상태 업데이트
+    suggestions = generate_sample_questions(query)
+    print("suggestions:", suggestions)
+    st.session_state.current_suggestions = suggestions
+    print("st.session_state.current_suggestions:", st.session_state.current_suggestions)
+    st.session_state.show_buttons = True
