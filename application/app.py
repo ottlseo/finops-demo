@@ -16,10 +16,6 @@ from langchain_core.runnables import RunnableConfig
 from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
 from src.common_utils import SQLDatabase
 
-st.set_page_config(layout="wide")
-st.title("FinOps Text2SQL Demo 💸") 
-st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
-
 boto_session = boto3.Session()
 region_name = "us-west-2" #boto_session.region_name
 athena_region_name = "us-east-1"
@@ -841,15 +837,15 @@ def print_graph_results(app, query: str):
                             if key == "analyze_intent":
                                 st.info("🤔 질문을 분석하고 있습니다...")
                             elif key == "get_sample_queries":
-                                st.info("🔍 비슷한 쿼리를 찾고 있습니다...")
+                                st.info("🔍 비슷한 질문을 찾고 있습니다...")
                             elif key == "generate_query":
-                                st.info("⚙️ SQL 쿼리를 생성하고 있습니다...")
+                                st.info("⚙️ 비용 분석을 위해 SQL 쿼리를 생성하고 있습니다...")
                             elif key == "get_relevant_columns":
-                                st.info("🔍 관련된 스키마 정보를 탐색하고 있습니다...")
+                                st.info("🔍 관련 데이터를 탐색하고 있습니다...")
                             elif key == "handle_failure":
                                 st.info("✅ 오류를 분석하고 있습니다...")
                             elif key == "execute_query":
-                                st.info("🚀 생성한 쿼리를 실행합니다...")
+                                st.info("🚀 분석 결과를 확인하고 있습니다...")
                             elif key == "generate_answer":
                                 st.info("📝 응답을 생성하고 있습니다...")
                     
@@ -983,6 +979,12 @@ app = build_langgraph_workflow()
 # normalizer = ddb.ServiceNameNormalizer() 
 
 ################## chatbot ui ##################
+
+st.set_page_config(layout="wide")
+st.title("FinOps Text2SQL Demo 💸") 
+st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
+show_log = st.toggle("Show log")
+
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
@@ -997,5 +999,9 @@ if query:
     st.session_state.messages.append({"role": "user", "content": query})    
 
     st.chat_message("user").write(query)
-    print_graph_results_with_details(app, query=query)
+
+    if show_log:
+        print_graph_results_with_details(app, query=query)
+    else:
+        print_graph_results(app, query=query)
     
