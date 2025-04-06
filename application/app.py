@@ -118,7 +118,7 @@ def search_by_keywords(keyword):
                     }
                 },
                 "inner_hits": {
-                    "size": 1, 
+                    "size": 2, 
                     "_source": ["columns.col_name", "columns.col_desc"]
                 }
             }
@@ -423,7 +423,7 @@ def get_valid_service_codes():
         # Add other valid service codes as needed
     }
 
-def validate_and_fix_query(query: str, valid_services: set) -> tuple[str, bool, str]:
+def validate_and_fix_service_name(query: str, valid_services: set) -> tuple[str, bool, str]:
     service_patterns = [
         r"service\s*=\s*'([^']*)'",
         r"service\s*LIKE\s*'([^']*)'",
@@ -463,9 +463,10 @@ def generate_query(state: GraphState) -> GraphState:
     table_details = ['cur.hourly_view_all']
     
     query_state = state.get("query_state", {}) or {}
+    relavant_columns = query_state.get("relevant_columns", {}).get("search_results", []) or []
     error_info = query_state.get("error", {}) or {}
     hint = error_info.get("hint", "None")
-    
+
     # sys_prompt_template = "You are a skilled database engineer who writes {dialect} SQL queries in response to user questions. Your task is to create accurate SQL queries that match the user's question based on the given database information."
     # usr_prompt_template = "Based on the following sample queries, schema information, and past failure history, create a query that matches the DB dialect. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details}\n\n #Additional information (past failure history, additional acquired information, etc.):\n {hint}"    
 
@@ -473,24 +474,17 @@ def generate_query(state: GraphState) -> GraphState:
     AWS 서비스 이름을 사용할 때는 정확한 서비스 코드를 사용해야 합니다 (예: 'AmazonEC2', 'AWSKMS').
     오직 SQL 쿼리만을 생성해야 하며, 어떠한 설명이나 추가 텍스트도 포함해서는 안 됩니다."""
     
-    usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. 
-    WHERE절에서 service 조건을 사용할 때는 반드시 정확한 AWS 서비스 코드를 사용하세요.
-    예시: WHERE service = 'AmazonEC2' (O), WHERE service = 'EC2' (X)
-    
-    #질문:
-    {question}
-    
-    #샘플 쿼리:
-    {sample_queries}
-    
-    #사용 가능한 테이블:
-    {table_details}
-    
-    #추가 정보:
-    {hint}
-    
+    usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. \n
+    WHERE절에서 service 조건을 사용할 때는 반드시 정확한 AWS 서비스 코드를 사용하세요.\n
+    예시: WHERE service = 'AmazonEC2' (O), WHERE service = 'EC2' (X)\n
+    #질문: {question}\n
+    #샘플 쿼리: {sample_queries}\n
+    #사용 가능한 테이블: {table_details}\n
+    #추가 정보: {hint}\n
+    다음 Column을 확인하고, 적절한 column을 골라 쿼리에 활용하세요: {relavant_columns}\n
     응답 (SQL 쿼리만):"""
-    
+    #
+
     sys_prompt, usr_prompt = create_prompt(
         sys_prompt_template, 
         usr_prompt_template, 
@@ -498,14 +492,16 @@ def generate_query(state: GraphState) -> GraphState:
         dialect=dialect, 
         sample_queries=sample_queries, 
         table_details=table_details, 
+        relavant_columns=relavant_columns,
         hint=hint
     )
     
+    st.write(usr_prompt)
     generated_query = converse_with_bedrock(sys_prompt, usr_prompt)
     
     # Validate the generated query
     valid_services = get_valid_service_codes()
-    validated_query, is_valid, error_message = validate_and_fix_query(generated_query, valid_services)
+    validated_query, is_valid, error_message = validate_and_fix_service_name(generated_query, valid_services)
     
     if not is_valid:
         new_query_state["status"] = "error"
@@ -560,14 +556,9 @@ def validate_query(state: GraphState) -> GraphState:
     usr_prompt_template = """사용자의 질문에 맞게 쿼리에 alias를 추가하세요. 
     원본 SQL 쿼리에서 사용되지 않은 테이블이나 컬럼을 추가하는 것은 허용되지 않습니다.
     서문이나 설명 없이 생성된 SQL 쿼리문만 제공하세요.
-
-    #질문: {question}
-
-    #기존 쿼리:
-    {query}
-
-    #쿼리 실행 계획:
-    {query_plan}"""        
+    #질문: {question}\n
+    #기존 쿼리: {query}\n
+    #쿼리 실행 계획: {query_plan}"""        
     # sys_prompt_template = "You are a database expert who reviews existing {dialect} SQL queries in response to user questions and optimizes them when necessary. Your task is to examine the query's coherence and potential for optimization based on the given SQL query and additional information, and provide a final query based on this analysis." 
     # usr_prompt_template = "Please add aliases to the query to match the user's question. It is not allowed to add tables or columns that were not used in the original SQL query. Skip the introduction and provide only the generated SQL query statement. \n\n #Question: {question}\n\n #Existing query:\n {query}\n\n #Query plan:\n {query_plan}"    
 
@@ -639,13 +630,12 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     message = query_state['error']['message']
     
     sys_prompt_template = "당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 스키마 탐색에 관련된 키워드를 제안하는 것입니다."
-    usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 
-    이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
+    usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
     #사용자의 질문: {question}\n\n
     #실패한 SQL 쿼리: {query}\n\n
     #오류 메시지: {message}\n\n
-    추가 텍스트나 설명 없이 쉼표로 구분된 키워드 목록이나 짧은 문구로만 응답하세요.\n\n
-    #Format: {csv_list_response_format}""" ## TODO: update prompt
+    추가 텍스트나 설명 없이, 쉼표로 구분된 키워드 목록으로만 응답하세요.\n\n
+    #응답 예시: example_column_name, sample_column, sample_column_key"""
     
     sys_prompt, usr_prompt = create_prompt(
         sys_prompt_template, 
@@ -658,8 +648,7 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     
     keywords = converse_with_bedrock(sys_prompt, usr_prompt)
     search_results = search_by_keywords(keywords) if keywords else ""
-    
-    # query_state를 업데이트하여 검색 결과 포함
+
     query_state["relevant_columns"] = {
         "keywords": keywords,
         "search_results": search_results
@@ -747,7 +736,7 @@ def build_langgraph_workflow():
     workflow.add_node("get_sample_queries", get_sample_queries)
     workflow.add_node("check_readiness", check_readiness)
     workflow.add_node("get_relevant_tables", get_relevant_tables)
-    workflow.add_node("describe_schema", describe_schema_from_view)
+    # workflow.add_node("describe_schema", describe_schema_from_view)
 
     # SubGraph2 Nodes - Query Generation & Execution
     workflow.add_node("generate_query", generate_query)
@@ -776,8 +765,9 @@ def build_langgraph_workflow():
             "Not Ready": "get_relevant_tables"
         }
     )
-    workflow.add_edge("get_relevant_tables", "describe_schema")
-    workflow.add_edge("describe_schema", "check_readiness")
+    # workflow.add_edge("get_relevant_tables", "describe_schema")
+    # workflow.add_edge("describe_schema", "check_readiness")
+    workflow.add_edge("get_relevant_tables", "check_readiness")
 
     # Edges in SubGraph2
     workflow.add_edge("generate_query", "validate_query")
