@@ -193,6 +193,7 @@ def get_sample_queries(state: GraphState) -> GraphState:
     rerank_model_id = "cohere.rerank-v3-5:0"
     model_package_arn = f"arn:aws:bedrock:{region_name}::foundation-model/{rerank_model_id}"
 
+    # TODO: 함수로 빼기
     text_sources = [
         {
             "type": "INLINE",
@@ -242,8 +243,7 @@ def check_readiness(state: GraphState) -> GraphState:
     question = state["question"]
     sample_queries = state["sample_queries"]
     table_details = state.get("table_details", "") 
-    ## TODO: table (view) 선택 과정 추가
-    ## TODO: 새로운 노드 추가하기 -> get_relevant_columns: 적절한 column을 vector 검색해 매핑
+    ## TODO: table (view) 선택 과정 추가 (새로운 노드 추가하기 -> get_relevant_columns: 적절한 column을 vector 검색해 매핑)
     
     # sys_prompt_template = "You are a skilled database engineer who writes SQL queries for user questions. Your task is to determine whether it's possible to write an SQL query for the user's question based on the given database information."
     # usr_prompt_template = "Determine if sufficient information has been provided to generate an SQL query for the question. Respond with 'Ready' if there's enough information, or 'Not Ready' if the information is insufficient. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details} \n\n Skip the preamble or explaination. Only provide 'Ready' or 'Not Ready'"    
@@ -282,8 +282,11 @@ def get_relevant_tables(state: GraphState) -> GraphState:
     table_inputs = [json.loads(content)['table_summary'] for content in page_contents]
 
     sys_prompt_template = """당신은 사용자 요청에 맞는 SQL 쿼리를 작성하는 유능한 데이터베이스 엔지니어입니다. 당신의 임무는 SQL 쿼리 작성에 필요한 테이블을 선택하는 것입니다."""
-    usr_prompt_template = """사용자 요청에 맞는 SQL 쿼리를 생성하기 위해 필요한 테이블을 선택하여, 이를 중요도 순서로 정렬한 후 인덱스 번호(0부터 시작)로 응답하세요. 요구한 사항 외의 설명을 절대 추가하지 마세요.
-    \n\n #질문: {question}\n\n #테이블 정보:\n {table_inputs}\n\n #형식: {csv_list_response_format}""" #사용자 요청에 관련된 테이블이 없으면 빈 목록("")으로 응답하세요.
+    usr_prompt_template = """사용자 요청에 맞는 SQL 쿼리를 생성하기 위해 필요한 테이블을 선택하여, 이를 중요도 순서로 정렬한 후 인덱스 번호(0부터 시작)로 응답하세요. 요구한 사항 외의 설명을 절대 추가하지 마세요.\n\n 
+    #질문: {question}\n
+    #테이블 정보: {table_inputs}\n
+    #형식: {csv_list_response_format}
+    """ #사용자 요청에 관련된 테이블이 없으면 빈 목록("")으로 응답하세요.
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, table_inputs=table_inputs, csv_list_response_format=csv_list_response_format)
     selected_tables = converse_with_bedrock(sys_prompt, usr_prompt)
 
@@ -299,97 +302,16 @@ def get_relevant_tables(state: GraphState) -> GraphState:
         return GraphState(tables=[], table_names=[])
 
 def describe_schema(state: GraphState) -> GraphState:
-    table_names = ['cur.hourly_view_all'] #state["table_names"] #['cur.hourly_view_all', 'cur.summary_view_all'] 
-    table_details = []
-    inspector = inspect(engine)
-    
-    for table_name in table_names:
-        columns = inspector.get_columns(table_name)
-
-        create_table_sql = f"CREATE TABLE {table_name} (\n"
-        create_table_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
-        create_table_sql += "\n);"
-
-        with engine.connect() as connection:
-            sample_query = text(f"SELECT * FROM {table_name} LIMIT 5")
-            result = connection.execute(sample_query)
-            sample_data = [dict(zip(result.keys(), row)) for row in result]
-            
-        table_desc = get_column_description(table_name) if 'table_search_client' in globals() else {}
-
-        table_detail = {
-            "table": table_name,
-            "cols": table_desc if table_desc else {col['name']: str(col['type']) for col in columns},
-            "create_table_sql": create_table_sql,
-            "sample_data": str(sample_data) if sample_data else "No sample data available"
-        }
-
-        if not table_detail["cols"]:
-            print(f"No columns found for table {table_name}")
-        table_details.append(table_detail) 
-                    
-    return GraphState(table_details=table_details)
-
-def describe_schema_from_view(state: GraphState) -> GraphState:
     view_names = ['cur.hourly_view_all']
-    table_details = ['cur.hourly_view_all']
+    table_details = []
     
-    with engine.connect() as connection:
-        for view_name in view_names:
-            try:
-                # SHOW COLUMNS 쿼리 실행
-                columns_query = f"SHOW COLUMNS FROM {view_name}"
-                columns_result = connection.execute(text(columns_query))
-                
-                # 결과의 실제 구조를 로깅하여 확인
-                first_row = columns_result.first()
-                if first_row is None:
-                    print(f"No columns found for {view_name}")
-                    continue
-                
-                # 컬럼 정보 추출 (에러 처리 추가)
-                columns = []
-                for row in columns_result:
-                    try:
-                        # row의 구조를 출력하여 확인
-                        print(f"Column row structure: {row}")
-                        
-                        # 첫 번째 필드를 컬럼 이름으로, 두 번째 필드를 타입으로 가정
-                        column_info = {
-                            "name": str(row[0]) if row[0] is not None else "unknown",
-                            "type": str(row[1]) if len(row) > 1 and row[1] is not None else "unknown"
-                        }
-                        columns.append(column_info)
-                    except Exception as e:
-                        print(f"Error processing column row: {e}")
-                        continue
-                
-                # 테이블 정보 생성
-                create_view_sql = f"/* View structure for {view_name} */\n"
-                create_view_sql += ",\n".join([f"    {col['name']} {col['type']}" for col in columns])
-                
-                # 샘플 데이터 조회
-                try:
-                    sample_query = text(f"SELECT * FROM {view_name} LIMIT 5")
-                    result = connection.execute(sample_query)
-                    sample_data = [dict(zip(result.keys(), row)) for row in result]
-                except Exception as e:
-                    print(f"Error fetching sample data: {e}")
-                    sample_data = []
-                
-                table_detail = {
-                    "table": view_name,
-                    "cols": {col['name']: col['type'] for col in columns},
-                    "create_table_sql": create_view_sql,
-                    "sample_data": str(sample_data) if sample_data else "No sample data available"
-                }
-                
-                table_details.append(table_detail)
-                
-            except Exception as e:
-                print(f"Error describing view {view_name}: {e}")
-                continue
-                    
+    for view_name in view_names:
+        table_desc = get_column_description(view_name) if 'table_search_client' in globals() else {}
+        table_detail = {
+            "table": view_name,
+            "cols": table_desc if table_desc else []
+        }
+        table_details.append(table_detail) 
     return GraphState(table_details=table_details)
 
 def next_step_by_intent(state: GraphState) -> GraphState:
@@ -460,9 +382,9 @@ def generate_query(state: GraphState) -> GraphState:
     new_query_state = copy.deepcopy(initial_query_state)
     question = state["question"]
     sample_queries = state["sample_queries"]
-    table_details = ['cur.hourly_view_all']
     
     query_state = state.get("query_state", {}) or {}
+    table_details = query_state.get("table_details", []) or []
     relavant_columns = query_state.get("relevant_columns", {}).get("search_results", []) or []
     error_info = query_state.get("error", {}) or {}
     hint = error_info.get("hint", "None")
@@ -483,8 +405,7 @@ def generate_query(state: GraphState) -> GraphState:
     #추가 정보: {hint}\n
     다음 Column을 확인하고, 적절한 column을 골라 쿼리에 활용하세요: {relavant_columns}\n
     응답 (SQL 쿼리만):"""
-    #
-
+    
     sys_prompt, usr_prompt = create_prompt(
         sys_prompt_template, 
         usr_prompt_template, 
@@ -495,8 +416,6 @@ def generate_query(state: GraphState) -> GraphState:
         relavant_columns=relavant_columns,
         hint=hint
     )
-    
-    st.write(usr_prompt)
     generated_query = converse_with_bedrock(sys_prompt, usr_prompt)
     
     # Validate the generated query
@@ -631,10 +550,10 @@ def get_relevant_columns(state: GraphState) -> GraphState:
     
     sys_prompt_template = "당신은 SQL 쿼리의 문제를 파악하고 트러블슈팅하는 SQL 전문가입니다. 당신의 역할은 실패한 SQL 쿼리를 분석하고 문제를 해결하기 위해 스키마 탐색에 관련된 키워드를 제안하는 것입니다."
     usr_prompt_template = """사용자의 질문과, 실패한 SQL 쿼리, 오류 메시지가 주어지면 데이터베이스 스키마 탐색을 위한 3-5개의 관련 키워드 또는 구문을 제공합니다. 이것들은 쿼리를 수정할 올바른 테이블과 열 이름을 찾는 데 도움이 될 것입니다.\n\n
-    #사용자의 질문: {question}\n\n
-    #실패한 SQL 쿼리: {query}\n\n
-    #오류 메시지: {message}\n\n
-    추가 텍스트나 설명 없이, 쉼표로 구분된 키워드 목록으로만 응답하세요.\n\n
+    #사용자의 질문: {question}\n
+    #실패한 SQL 쿼리: {query}\n
+    #오류 메시지: {message}\n
+    추가 텍스트나 설명 없이, 쉼표로 구분된 키워드 목록으로만 응답하세요.\n
     #응답 예시: example_column_name, sample_column, sample_column_key"""
     
     sys_prompt, usr_prompt = create_prompt(
@@ -687,17 +606,17 @@ def get_database_answer(state: GraphState) -> GraphState:
         usr_prompt_template = """답변은 사용된 쿼리, 데이터프레임(markdown table 형식), 그리고 질문에 대한 간단한 설명을 포함해야 합니다. 
         만약 쿼리가 정상 실행되었는데 데이터가 비어있다면, 조회된 데이터가 없다고 답하고, 다른 기간이나 조건으로 검색해볼 것을 사용자에게 추천하세요.
         현재 날짜가 언제인지는 신경쓸 필요가 없습니다. 쿼리가 정상 실행되었다면 결과를 데이터 프레임으로 만들어 출력하세요. \n\n
-        #질문: {question}\n\n
-        #실행된 쿼리: {query}\n\n
+        #질문: {question}\n
+        #실행된 쿼리: {query}\n
         #데이터: {data}\n
         """
         #"The answer should include the used query, dataframe (as a Markdown Table), and a brief response to the question. \n\n#Question: {question}\n\n#Used query: {query}\n\n#Data: {data}\n\n"
         sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, data=data)
     else:
         usr_prompt_template = """다음은 사용자 질문에 대한 쿼리 실행 실패 기록입니다. 이를 바탕으로 요청 처리가 실패한 이유를 설명하세요.\n\n
-        #질문: {question}\n\n
-        #실행된 쿼리: {query}\n\n
-        #실패 단계: {failed_step}\n\n
+        #질문: {question}\n
+        #실행된 쿼리: {query}\n
+        #실패 단계: {failed_step}\n
         #오류 메시지: {message}\n
         """
         #"The following is a record of a failed query execution for a user question. Based on this, explain why the request processing failed.\n\n#Question: {question}\n\n#Used query: {query}\n\n#Failed step: {failed_step}\n\n#Error message: {message}\n\n"
@@ -736,7 +655,7 @@ def build_langgraph_workflow():
     workflow.add_node("get_sample_queries", get_sample_queries)
     workflow.add_node("check_readiness", check_readiness)
     workflow.add_node("get_relevant_tables", get_relevant_tables)
-    # workflow.add_node("describe_schema", describe_schema_from_view)
+    workflow.add_node("describe_schema", describe_schema)
 
     # SubGraph2 Nodes - Query Generation & Execution
     workflow.add_node("generate_query", generate_query)
@@ -762,12 +681,11 @@ def build_langgraph_workflow():
         next_step_by_readiness,
         {
             "Ready": "generate_query",
-            "Not Ready": "get_relevant_tables"
+            "Not Ready": "get_relevant_tables" # Not ready 일 경우에만 스키마 탐색 노드를 거침 
         }
     )
-    # workflow.add_edge("get_relevant_tables", "describe_schema")
-    # workflow.add_edge("describe_schema", "check_readiness")
-    workflow.add_edge("get_relevant_tables", "check_readiness")
+    workflow.add_edge("get_relevant_tables", "describe_schema")
+    workflow.add_edge("describe_schema", "check_readiness")
 
     # Edges in SubGraph2
     workflow.add_edge("generate_query", "validate_query")
@@ -887,7 +805,7 @@ def print_graph_results_with_details(app, query: str):
                             with progress_container:
                                 if key == "analyze_intent":
                                     intent = value.get('intent', {}) if isinstance(value, dict) else str(value)
-                                    with st.expander("🤔 질문을 분석하고 있습니다...", expanded=False):  # expanded=False로 변경
+                                    with st.expander("🤔 질문을 분석하고 있습니다...", expanded=False): 
                                         st.write(intent)
                                     node_results[key] = ("🤔", "Question Analysis", intent)
                                 elif key == "get_sample_queries":
@@ -903,13 +821,13 @@ def print_graph_results_with_details(app, query: str):
                                         st.write(sample_queries)
                                     node_results[key] = ("🔍", "Similar Queries", sample_queries)
                                 elif key == "describe_schema": 
-                                    schema_description = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
+                                    schema_description = value.get('query_state', {}).get('table_details', []) if isinstance(value, dict) else str(value)
                                     with st.expander("👀 스키마를 분석하고 있습니다...", expanded=False):
                                         st.write(schema_description)
                                     node_results[key] = ("👀", "Describe Schema", schema_description)
                                 elif key == "get_relevant_columns":
                                     relevant_schema = value.get('query_state', {}).get('relevant_columns', '') if isinstance(value, dict) else str(value)
-                                    with st.expander("🔍 관련된 스키마 정보를 탐색하고 있습니다...", expanded=False):
+                                    with st.expander("🔍 관련된 스키마 구조를 탐색하고 있습니다...", expanded=False):
                                         st.write(relevant_schema)
                                     node_results[key] = ("👀", "Describe Relevant Schema", relevant_schema)
                                 elif key == "handle_failure":
