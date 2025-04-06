@@ -230,7 +230,7 @@ def get_sample_queries(state: GraphState) -> GraphState:
     for result in response['results']:
         index = result['index']
         sample_input = page_contents[index]['input']
-        sample_sql = page_contents[index]['sql']  # query를 sql로 변경
+        sample_sql = page_contents[index]['sql']
         reranked_samples.append({
             'input': sample_input,
             'sql': sample_sql, 
@@ -267,7 +267,7 @@ def check_readiness(state: GraphState) -> GraphState:
     sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
     readiness = converse_with_bedrock(sys_prompt, usr_prompt)
     
-    # 응답 검증 및 정제
+    # 응답 검증 및 정제 - TODO: Nova 적용 시
     # if readiness not in ['Ready', 'Not Ready']:
     #     # 잘못된 응답의 경우 기본값 설정
     #     print(f"Unexpected response: {readiness}. Defaulting to 'Not Ready'")
