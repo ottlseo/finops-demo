@@ -3,6 +3,7 @@ import boto3
 import json
 import copy
 import re
+import time
 from typing import TypedDict
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -626,7 +627,7 @@ def get_database_answer(state: GraphState) -> GraphState:
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
     return GraphState(answer=answer)
 
-def generate_sample_questions(question: str):
+def generate_followup_questions(question: str):
     sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터로 더 다양한 비용 인사이트를 얻을 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
     질문은 한국어로 작성되어야 하고, 항상 3개의 배열 형태여야 합니다. EC2 서비스 관련 비용 질문만 생성합니다. 
     이유나 부가 설명은 작성하지 말고 출력 형식을 따르세요. 절대 비용과 관련 없는 질문(예: RI 만료 예정일)을 생성하지 마세요.
@@ -657,7 +658,7 @@ def build_langgraph_workflow():
     workflow.add_node("generate_query", generate_query)
     workflow.add_node("validate_query", validate_query)
     workflow.add_node("execute_query", execute_query)
-    workflow.add_node("generate_sample_questions", generate_sample_questions)
+    workflow.add_node("generate_followup_questions", generate_followup_questions)
     workflow.add_node("handle_failure", handle_failure)
     workflow.add_node("get_relevant_columns", get_relevant_columns)
 
@@ -716,9 +717,9 @@ def build_langgraph_workflow():
     workflow.add_edge("get_relevant_columns", "generate_query")
 
     # Edges to END
-    workflow.add_edge("get_database_answer", "generate_sample_questions")
-    workflow.add_edge("get_general_answer", "generate_sample_questions")
-    workflow.add_edge("generate_sample_questions", END)
+    workflow.add_edge("get_database_answer", "generate_followup_questions")
+    workflow.add_edge("get_general_answer", "generate_followup_questions")
+    workflow.add_edge("generate_followup_questions", END)
 
     memory = MemorySaver()
     app = workflow.compile(checkpointer=memory)
@@ -765,8 +766,6 @@ def print_graph_results(app, query: str):
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
                             )
-                        # st.session_state.show_buttons = True
-
             # 진행 상황 컨테이너 정리
             progress_container.empty()
             
@@ -844,8 +843,9 @@ def print_graph_results_with_details(app, query: str):
                                     with st.expander("📝 응답을 생성하고 있습니다...", expanded=False):
                                         st.write(answer_value)
                                     node_results[key] = ("📝", "Final Response", answer_value)
-                                elif key == "generate_sample_questions":
+                                elif key == "generate_followup_questions":
                                     st.session_state.followup_questions = value.get('sample_questions', []) if isinstance(value, dict) else str(value)
+                                    st.write(st.session_state.followup_questions)
 
                     with response_container:
                         if isinstance(value, dict) and 'answer' in value:
@@ -873,15 +873,19 @@ def print_graph_results_with_details(app, query: str):
 
 def handle_query(query):
     st.chat_message("user").write(query)
-    # st.session_state.show_buttons = False 
     st.session_state.messages.append({"role": "user", "content": query})    
-
     if show_log:
         print_graph_results_with_details(app, query=query)
     else:
         print_graph_results(app, query=query)
-    
-    # st.session_state.show_buttons = True  # 응답 완료 후 버튼 다시 표시
+
+def create_buttons():
+    timestamp = int(time.time() * 1000)
+    if "followup_questions" in st.session_state:
+        for idx, button_text in enumerate(st.session_state.followup_questions):
+            unique_key = f"btn_{timestamp}_{idx}"
+            if st.button(button_text, key=unique_key):
+                st.session_state.query = button_text
 
 ################## setting ##################
 
@@ -897,26 +901,17 @@ st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드�
 show_log = st.toggle("Show log", value=True)
 
 BUTTON_CONFIGS = [
-    "EC2 비용이 가장 높았던 달을 알려줘",
-    "상위 10개 어카운트 ID의 EC2 RI 보여줘",
-    "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려줘"
+    "EC2 비용이 가장 높았던 달을 알려주세요.",
+    "상위 10개 어카운트 ID의 EC2 RI 보여주세요.",
+    "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
 ]
-
-def create_buttons():
-    if "followup_questions" in st.session_state:
-        for button_text in st.session_state.followup_questions:
-            if st.button(button_text):
-                st.session_state.query = button_text
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
     ]
-
 if "followup_questions" not in st.session_state:
     st.session_state.followup_questions = BUTTON_CONFIGS 
-# if "show_buttons" not in st.session_state:
-#     st.session_state.show_buttons = True
 
 # 채팅 히스토리 표시
 for msg in st.session_state.messages:
@@ -929,7 +924,7 @@ query = st.chat_input("질문을 입력하세요")
 if "query" in st.session_state:
     del st.session_state.followup_questions
     query = st.session_state.query
-    del st.session_state.query  # 처리 후 삭제
+    del st.session_state.query 
     handle_query(query)
     st.rerun()
 elif query:
