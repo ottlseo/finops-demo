@@ -880,11 +880,9 @@ def handle_query(query):
         print_graph_results(app, query=query)
 
 def create_buttons():
-    timestamp = int(time.time() * 1000)
     if "followup_questions" in st.session_state:
         for idx, button_text in enumerate(st.session_state.followup_questions):
-            unique_key = f"btn_{timestamp}_{idx}"
-            if st.button(button_text, key=unique_key):
+            if st.button(button_text):
                 st.session_state.query = button_text
 
 ################## setting ##################
@@ -905,13 +903,13 @@ BUTTON_CONFIGS = [
     "상위 10개 어카운트 ID의 EC2 RI 보여주세요.",
     "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
 ]
+# if "followup_questions" not in st.session_state:
+#     st.session_state.followup_questions = BUTTON_CONFIGS 
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
     ]
-if "followup_questions" not in st.session_state:
-    st.session_state.followup_questions = BUTTON_CONFIGS 
 
 # 채팅 히스토리 표시
 for msg in st.session_state.messages:
