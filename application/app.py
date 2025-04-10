@@ -17,13 +17,11 @@ from src.common_utils import SQLDatabase
 from src.config import *
 
 boto_session = boto3.Session()
-region_name = "us-west-2"
-llm_model = SONNET # TODO: -> NOVA_PRO
-
 engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
 db = SQLDatabase(engine)
 Session = sessionmaker(bind=engine)
 
+llm_model = SONNET # TODO: -> NOVA_PRO
 csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
 json_response_format = """'The output should be formatted as a JSON instance that conforms to the JSON schema below.\n\nAs an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}\nthe object {"foo": ["bar", "baz"]} is a well-formatted instance of the schema. The object {"properties": {"foo": ["bar", "baz"]}} is not well-formatted.\n\nHere is the output schema:\n```\n{"properties": {"setup": {"title": "Setup", "description": "question to set up a joke", "type": "string"}, "punchline": {"title": "Punchline", "description": "answer to resolve the joke", "type": "string"}}, "required": ["setup", "punchline"]}\n```'"""
 
@@ -66,10 +64,10 @@ def init_boto3_client(region: str):
     return boto3.client("bedrock-runtime", region_name=region, config=retry_config)
 
 def init_search_resources():  
-    sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["sql", "input", "description"])
-    table_search_client = OpenSearchClient(region_name=region_name, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
-    sql_retriever = OpenSearchVectorRetriever(sql_search_client, region_name=region_name, k=20)
-    table_retriever = OpenSearchVectorRetriever(table_search_client, region_name=region_name, k=10)
+    sql_search_client = OpenSearchClient(region_name=REGION, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["sql", "input", "description"])
+    table_search_client = OpenSearchClient(region_name=REGION, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
+    sql_retriever = OpenSearchVectorRetriever(sql_search_client, region_name=REGION, k=20)
+    table_retriever = OpenSearchVectorRetriever(table_search_client, region_name=REGION, k=10)
     return sql_search_client, table_search_client, sql_retriever, table_retriever
 
 def get_column_description(table_name):
@@ -170,16 +168,9 @@ def analyze_intent(state: GraphState) -> GraphState:
     
     return GraphState(intent=intent)
 
-def get_sample_queries(state: GraphState) -> GraphState: 
-    question = state["question"]
-    samples = sql_retriever.vector_search(question)  # description으로 검색
-    page_contents = [json.loads(doc.page_content) for doc in samples]
-
-    bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=region_name)
-    rerank_model_id = "cohere.rerank-v3-5:0"
-    model_package_arn = f"arn:aws:bedrock:{region_name}::foundation-model/{rerank_model_id}"
-
-    # TODO: 함수로 빼기
+def rerank(query, page_contents):
+    bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=REGION)
+    model_package_arn = f"arn:aws:bedrock:{REGION}::foundation-model/{RERANK_MODEL}"
     text_sources = [
         {
             "type": "INLINE",
@@ -197,7 +188,7 @@ def get_sample_queries(state: GraphState) -> GraphState:
                     {
                         "type": "TEXT",
                         "textQuery": {
-                            "text": question
+                            "text": query
                         }
                     }
                 ],
@@ -212,8 +203,16 @@ def get_sample_queries(state: GraphState) -> GraphState:
                     }
                 }
             )
-    
+    return response 
+
+def get_sample_queries(state: GraphState) -> GraphState: 
+    question = state["question"]
+    samples = sql_retriever.vector_search(question) 
+    page_contents = [json.loads(doc.page_content) for doc in samples]
+
+    response = rerank(question, page_contents)
     reranked_samples = []
+
     for result in response['results']:
         index = result['index']
         sample_input = page_contents[index]['input']
@@ -225,11 +224,10 @@ def get_sample_queries(state: GraphState) -> GraphState:
     return GraphState(sample_queries=reranked_samples)
 
 def check_readiness(state: GraphState) -> GraphState:
-    print(state)
     question = state["question"]
     sample_queries = state["sample_queries"]
     table_details = state.get("table_details", "") 
-    ## TODO: table (view) 선택 과정 추가 (새로운 노드 추가하기 -> get_relevant_columns: 적절한 column을 vector 검색해 매핑)
+    ## TODO: table (view) 선택 과정 추가
     
     # sys_prompt_template = "You are a skilled database engineer who writes SQL queries for user questions. Your task is to determine whether it's possible to write an SQL query for the user's question based on the given database information."
     # usr_prompt_template = "Determine if sufficient information has been provided to generate an SQL query for the question. Respond with 'Ready' if there's enough information, or 'Not Ready' if the information is insufficient. \n\n #Question: {question}\n\n #Sample queries:\n {sample_queries}\n\n #Available tables:\n {table_details} \n\n Skip the preamble or explaination. Only provide 'Ready' or 'Not Ready'"    
@@ -870,7 +868,7 @@ def create_buttons():
 
 ################## setting ##################
 
-boto3_client = init_boto3_client(region_name)
+boto3_client = init_boto3_client(REGION)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
 app = build_langgraph_workflow()
 
