@@ -13,27 +13,16 @@ from langgraph.graph import END, StateGraph
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.errors import GraphRecursionError
 from langchain_core.runnables import RunnableConfig
-# import src.ddb as ddb
 from src.opensearch import OpenSearchVectorRetriever, OpenSearchClient
 from src.common_utils import SQLDatabase
+from src.config import *
 
 boto_session = boto3.Session()
-region_name = "us-west-2" #boto_session.region_name
-athena_region_name = "us-east-1"
-
-HAIKU = "us.anthropic.claude-3-haiku-20240307-v1:0" # HAIKU35 = "us.anthropic.claude-3-5-haiku-20241022-v1:0"
-SONNET = "us.anthropic.claude-3-5-sonnet-20241022-v2:0"
-NOVA_PRO = "us.amazon.nova-pro-v1:0"
+region_name = "us-west-2"
 llm_model = SONNET #NOVA_PRO # TODO: 프롬프트 개선 작업이 필요해서 우선은 Sonnet으로 테스트 진행
 
-ATHENA_URL = f"athena.{athena_region_name}.amazonaws.com" 
-ATHENA_DATABASE = 'cur'
-ATHENA_RESULTS_S3_BUCKET = 's3://athena-query-result-finops-cost-and-usage/'
-athena_connection_string = f"awsathena+rest://@{ATHENA_URL}:443/{ATHENA_DATABASE}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}" # /&work_group={athena_wkgrp}"
-engine = create_engine(athena_connection_string, echo=True)
+engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
 db = SQLDatabase(engine)
-
-DIALECT = "amazon_athena"
 Session = sessionmaker(bind=engine)
 
 csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
@@ -78,12 +67,8 @@ def init_boto3_client(region: str):
     return boto3.client("bedrock-runtime", region_name=region, config=retry_config)
 
 def init_search_resources():  
-    EXAMPLE_QUERIES_INDEX = 'sample_queries'
-    TABLE_DESCRIPTION_INDEX = 'schema_description'
-
     sql_search_client = OpenSearchClient(region_name=region_name, index_name=EXAMPLE_QUERIES_INDEX, mapping_name='mappings-sql', vector="input_v", text="input", output=["sql", "input", "description"])
     table_search_client = OpenSearchClient(region_name=region_name, index_name=TABLE_DESCRIPTION_INDEX, mapping_name='mappings-detailed-schema', vector="table_summary_v", text="table_summary", output=["table_name", "table_summary"])
-
     sql_retriever = OpenSearchVectorRetriever(sql_search_client, region_name=region_name, k=20)
     table_retriever = OpenSearchVectorRetriever(table_search_client, region_name=region_name, k=10)
     return sql_search_client, table_search_client, sql_retriever, table_retriever
@@ -360,7 +345,6 @@ def validate_and_fix_service_name(query: str, valid_services: set) -> tuple[str,
         matches = re.finditer(pattern, query, re.IGNORECASE)
         for match in matches:
             if 'IN' in pattern:
-                # Handle IN clause separately
                 services_in_clause = [s.strip().strip("'") for s in match.group(1).split(',')]
                 for service in services_in_clause:
                     if service not in valid_services:
@@ -890,7 +874,6 @@ def create_buttons():
 boto3_client = init_boto3_client(region_name)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
 app = build_langgraph_workflow()
-# normalizer = ddb.ServiceNameNormalizer() 
 
 ################## chatbot ui ##################
 st.set_page_config(layout="wide")
@@ -898,17 +881,17 @@ st.title("FinOps Text2SQL Demo 💸")
 st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
 show_log = st.toggle("Show log", value=True)
 
-BUTTON_CONFIGS = [
-    "EC2 비용이 가장 높았던 달을 알려주세요.",
-    "상위 10개 어카운트 ID의 EC2 RI 보여주세요.",
-    "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
-]
+# BUTTON_CONFIGS = [
+#     "EC2 비용이 가장 높았던 달을 알려주세요.",
+#     "상위 10개 어카운트 ID의 EC2 RI 보여주세요.",
+#     "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
+# ]
 # if "followup_questions" not in st.session_state:
 #     st.session_state.followup_questions = BUTTON_CONFIGS 
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "안녕하세요, 무엇이 궁금하세요?"}
+        {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용 관련 무엇이든 물어보세요!"}
     ]
 
 # 채팅 히스토리 표시

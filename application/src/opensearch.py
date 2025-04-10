@@ -8,19 +8,16 @@ from opensearchpy import OpenSearch, RequestsHttpConnection
 from .common_utils import sample_query_indexing, schema_desc_indexing
 from collections import namedtuple
 from dotenv import load_dotenv
-from .ssm import parameter_store
+from .config import *
 
 Document = namedtuple('Document', ['page_content', 'metadata'])
 
 class OpenSearchClient:
     def __init__(self, region_name, index_name, mapping_name, vector, text, output):
         config = self.load_opensearch_config()
-        pm = parameter_store('us-east-1')
+        auth = (OPENSEARCH_USER_ID, OPENSEARCH_USER_PASSWORD)
 
-        credentials = boto3.Session().get_credentials()
-        auth = (pm.get_params(key="opensearch_user_id", enc=False), pm.get_params(key="opensearch_user_password", enc=True)) #AWSV4SignerAuth(credentials, region_name, 'aoss')
-
-        collection_endpoint = pm.get_params(key="opensearch_domain_endpoint", enc=False) # config['COLLECTION_ENDPOINT']
+        collection_endpoint = OPENSEARCH_DOMAIN_ENDPOINT
         host = collection_endpoint.replace("https://", "").split(':')[0]
 
         self.index_name = index_name
