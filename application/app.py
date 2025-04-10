@@ -882,6 +882,7 @@ sql_search_client, table_search_client, sql_retriever, table_retriever = init_se
 app = build_langgraph_workflow()
 
 ################## chatbot ui ##################
+
 st.set_page_config(layout="wide")
 st.title("FinOps - AWS Cost and Usage Report Analysis") 
 
@@ -891,13 +892,14 @@ with col1:
 with col2: 
     show_log = st.toggle("Text2SQL 로그 확인하기", value=True)
 
+initial_questions = [
+    "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요.",
+    "이번 달에 새로 생성된 EC2 인스턴스의 생성 날짜와 타입, 그리고 비용을 보여주세요.",
+    "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
+]
+if "followup_questions" not in st.session_state:
+    st.session_state["followup_questions"] = initial_questions
 
-with st.container(border=True):
-    st.markdown('''###### 💁‍♀️  이렇게 질문해보세요.''') 
-    st.markdown('''- "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요."''')
-    st.markdown('''- "XX 어카운트에서 상위 10개 RI 인스턴스 타입과 비용, 인스턴스 개수를 알려주세요."''')
-    st.markdown('''- "XX 어카운트 리소스 중에 Savings Plan 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."''')    
-    
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용 관련 무엇이든 물어보세요!"}
@@ -925,11 +927,12 @@ elif query:
 if (st.session_state.messages and 
     st.session_state.messages[-1]["role"] == "assistant" and 
     "followup_questions" in st.session_state):
-    st.markdown("---") 
-    st.markdown("##### 💡 이런 질문은 어떠세요?")
-    for idx, button_text in enumerate(st.session_state.followup_questions):        
-        if st.button(button_text, key=f"btn_{idx}"):
-            st.session_state.query = button_text
-            if "followup_questions" in st.session_state:
-                del st.session_state.followup_questions
-            st.rerun()
+
+    with st.container(border=True):
+        st.markdown("##### 💡 이런 질문은 어떠세요?")
+        for idx, button_text in enumerate(st.session_state.followup_questions):        
+            if st.button(button_text, key=f"btn_{idx}"):
+                st.session_state.query = button_text
+                if "followup_questions" in st.session_state:
+                    del st.session_state.followup_questions
+                st.rerun()
