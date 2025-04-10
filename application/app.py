@@ -3,7 +3,6 @@ import boto3
 import json
 import copy
 import re
-import time
 from typing import TypedDict
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
@@ -19,7 +18,7 @@ from src.config import *
 
 boto_session = boto3.Session()
 region_name = "us-west-2"
-llm_model = SONNET #NOVA_PRO # TODO: 프롬프트 개선 작업이 필요해서 우선은 Sonnet으로 테스트 진행
+llm_model = SONNET # TODO: -> NOVA_PRO
 
 engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
 db = SQLDatabase(engine)
@@ -877,18 +876,21 @@ app = build_langgraph_workflow()
 
 ################## chatbot ui ##################
 st.set_page_config(layout="wide")
-st.title("FinOps Text2SQL Demo 💸") 
-st.markdown('''- [Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
-show_log = st.toggle("Show log", value=True)
+st.title("FinOps - AWS Cost and Usage Report Analysis") 
 
-# BUTTON_CONFIGS = [
-#     "EC2 비용이 가장 높았던 달을 알려주세요.",
-#     "상위 10개 어카운트 ID의 EC2 RI 보여주세요.",
-#     "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."
-# ]
-# if "followup_questions" not in st.session_state:
-#     st.session_state.followup_questions = BUTTON_CONFIGS 
+col1, col2 = st.columns(2)
+with col1:
+    st.caption('''[Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
+with col2: 
+    show_log = st.toggle("Text2SQL 로그 확인하기", value=True)
 
+
+with st.container(border=True):
+    st.markdown('''###### 💁‍♀️  이렇게 질문해보세요.''') 
+    st.caption('''- "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요."''')
+    st.caption('''- "XX 어카운트에서 상위 10개 RI 인스턴스 타입과 비용, 인스턴스 개수를 알려주세요."''')
+    st.caption('''- "XX 어카운트 리소스 중에 Savings Plan 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."''')    
+    
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용 관련 무엇이든 물어보세요!"}
@@ -899,7 +901,7 @@ for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
 create_buttons()
-query = st.chat_input("질문을 입력하세요")
+query = st.chat_input("질문을 입력하세요.")
 
 # session_state에 저장된 query가 있거나 새로운 chat_input이 있을 때 처리
 if "query" in st.session_state:
