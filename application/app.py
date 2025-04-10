@@ -792,7 +792,14 @@ def print_graph_results_with_details(app, query: str):
                                 elif key == "get_sample_queries":
                                     sample_queries = value.get('sample_queries', {}) if isinstance(value, dict) else str(value)
                                     with st.expander("🔍 비슷한 쿼리를 찾고 있습니다...", expanded=False):
-                                        st.write(sample_queries)
+                                        if isinstance(sample_queries, list):
+                                            for query in sample_queries:
+                                                if isinstance(query, dict):
+                                                    for k, v in query.items():
+                                                        if k == "sql":
+                                                            st.code(str(v), language="sql", wrap_lines=True)
+                                                        else:
+                                                            st.write(v)
                                     node_results[key] = ("🔍", "Similar Queries", sample_queries)
                                 elif key == "describe_schema": 
                                     schema_description = value.get('query_state', {}).get('table_details', []) if isinstance(value, dict) else str(value)
@@ -802,7 +809,10 @@ def print_graph_results_with_details(app, query: str):
                                 elif key == "get_relevant_columns":
                                     relevant_schema = value.get('query_state', {}).get('relevant_columns', '') if isinstance(value, dict) else str(value)
                                     with st.expander("🔍 관련된 스키마 구조를 탐색하고 있습니다...", expanded=False):
-                                        st.write(relevant_schema)
+                                        if isinstance(relevant_schema, dict):
+                                            for k, v in relevant_schema.items():
+                                                st.markdown(f"**{k}:**")
+                                                st.code(str(v), wrap_lines=True)
                                     node_results[key] = ("👀", "Describe Relevant Schema", relevant_schema)
                                 elif key == "handle_failure":
                                     error_message = value.get('query_state', {}).get('hint', '') if isinstance(value, dict) else str(value)
@@ -812,40 +822,45 @@ def print_graph_results_with_details(app, query: str):
                                 elif key == "generate_query":
                                     query_value = value.get('query_state', {}).get('query', '') if isinstance(value, dict) else str(value)
                                     with st.expander("⚙️ SQL 쿼리를 생성하고 있습니다...", expanded=False):
-                                        st.code(str(query_value))
+                                        st.code(str(query_value), language="sql", wrap_lines=True)
                                     node_results[key] = ("⚙️", "Generated SQL Query", query_value)
                                 elif key == "execute_query":
                                     execution_result = value.get('query_state', {}) if isinstance(value, dict) else {"result": str(value)}
                                     with st.expander("🚀 생성한 쿼리를 실행합니다...", expanded=False):
-                                        st.write(execution_result)
+                                        if isinstance(execution_result, dict):
+                                            for k, v in execution_result.items():
+                                                st.markdown(f"**{k}:**")
+                                                st.code(str(v), wrap_lines=True)
                                     node_results[key] = ("🚀", "Query Execution Results", execution_result)
                                 elif key == "generate_answer":
                                     answer_value = {"answer": value} if isinstance(value, str) else value
                                     with st.expander("📝 응답을 생성하고 있습니다...", expanded=False):
-                                        st.write(answer_value)
+                                        if isinstance(answer_value, dict):
+                                            for k, v in answer_value.items():
+                                                st.markdown(f"**{k}:**")
+                                                st.code(str(v), wrap_lines=True)
                                     node_results[key] = ("📝", "Final Response", answer_value)
                                 elif key == "generate_followup_questions":
-                                    st.session_state.followup_questions = value.get('sample_questions', []) if isinstance(value, dict) else str(value)
-                                    st.write(st.session_state.followup_questions)
-
+                                    if isinstance(value, dict) and 'sample_questions' in value:
+                                        st.session_state.followup_questions = value['sample_questions']
+            
                     with response_container:
                         if isinstance(value, dict) and 'answer' in value:
                             st.markdown(value['answer'])
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
                             )
-                            create_buttons()
-            # 최종 결과 표시
-            with progress_container:
-                st.markdown("### 🔍 Execution Details")
-                for node, (icon, title, result) in node_results.items():
-                    with st.expander(f"{icon} {title}", expanded=False):
-                        if isinstance(result, dict):
-                            for k, v in result.items():
-                                st.markdown(f"**{k}:**")
-                                st.code(str(v))
-                        else:
-                            st.code(str(result))
+            # # 최종 결과 표시
+            # with progress_container:
+            #     st.markdown("### 🔍 Execution Details")
+            #     for node, (icon, title, result) in node_results.items():
+            #         with st.expander(f"{icon} {title}", expanded=False):
+            #             if isinstance(result, dict):
+            #                 for k, v in result.items():
+            #                     st.markdown(f"**{k}:**")
+            #                     st.code(str(v), wrap_lines=True)
+            #             else:
+            #                 st.code(str(result), wrap_lines=True)
         except GraphRecursionError as e:
             st.error(f"⚠️ I encountered an error: {str(e)}")
             st.session_state.messages.append(
@@ -859,12 +874,6 @@ def handle_query(query):
         print_graph_results_with_details(app, query=query)
     else:
         print_graph_results(app, query=query)
-
-def create_buttons():
-    if "followup_questions" in st.session_state:
-        for idx, button_text in enumerate(st.session_state.followup_questions):
-            if st.button(button_text):
-                st.session_state.query = button_text
 
 ################## setting ##################
 
@@ -885,9 +894,9 @@ with col2:
 
 with st.container(border=True):
     st.markdown('''###### 💁‍♀️  이렇게 질문해보세요.''') 
-    st.caption('''- "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요."''')
-    st.caption('''- "XX 어카운트에서 상위 10개 RI 인스턴스 타입과 비용, 인스턴스 개수를 알려주세요."''')
-    st.caption('''- "XX 어카운트 리소스 중에 Savings Plan 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."''')    
+    st.markdown('''- "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요."''')
+    st.markdown('''- "XX 어카운트에서 상위 10개 RI 인스턴스 타입과 비용, 인스턴스 개수를 알려주세요."''')
+    st.markdown('''- "XX 어카운트 리소스 중에 Savings Plan 적용이 가장 시급한 인스턴스 패밀리를 알려주세요."''')    
     
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
@@ -898,15 +907,29 @@ if "messages" not in st.session_state:
 for msg in st.session_state.messages:
     st.chat_message(msg["role"]).write(msg["content"])
 
-create_buttons()
+# 새로운 쿼리가 입력되면 followup_questions 제거
 query = st.chat_input("질문을 입력하세요.")
+if query:
+    if "followup_questions" in st.session_state:
+        del st.session_state.followup_questions
 
-# session_state에 저장된 query가 있거나 새로운 chat_input이 있을 때 처리
+# session_state에 저장된 query 처리
 if "query" in st.session_state:
-    del st.session_state.followup_questions
     query = st.session_state.query
-    del st.session_state.query 
+    del st.session_state.query
     handle_query(query)
-    st.rerun()
 elif query:
     handle_query(query)
+
+# 마지막 메시지가 assistant의 응답일 때만 버튼 표시
+if (st.session_state.messages and 
+    st.session_state.messages[-1]["role"] == "assistant" and 
+    "followup_questions" in st.session_state):
+    st.markdown("---") 
+    st.markdown("##### 💡 이런 질문은 어떠세요?")
+    for idx, button_text in enumerate(st.session_state.followup_questions):        
+        if st.button(button_text, key=f"btn_{idx}"):
+            st.session_state.query = button_text
+            if "followup_questions" in st.session_state:
+                del st.session_state.followup_questions
+            st.rerun()
