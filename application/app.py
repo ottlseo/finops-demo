@@ -735,7 +735,7 @@ def print_graph_results(app, query: str):
                             elif key == "get_sample_queries":
                                 st.info("🔍 비슷한 질문을 찾고 있습니다...")
                             elif key == "generate_query":
-                                st.info("⚙️ 비용 분석을 위해 SQL 쿼리를 생성하고 있습니다...")
+                                st.info("⚙️ 비용 분석을 위한 SQL 쿼리를 생성하고 있습니다...")
                             elif key == "get_relevant_columns":
                                 st.info("🔍 관련 데이터를 탐색하고 있습니다...")
                             elif key == "handle_failure":
