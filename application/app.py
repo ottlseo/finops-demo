@@ -608,16 +608,23 @@ def get_database_answer(state: GraphState) -> GraphState:
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
     return GraphState(answer=answer)
 
-def generate_followup_questions(question: str):
-    sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터로 더 다양한 비용 인사이트를 얻을 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
-    질문은 한국어로 작성되어야 하고, 항상 3개의 배열 형태여야 합니다. EC2 서비스 관련 비용 질문만 생성합니다. 
-    이유나 부가 설명은 작성하지 말고 출력 형식을 따르세요. 절대 비용과 관련 없는 질문(예: RI 만료 예정일)을 생성하지 마세요.
-    #출력 형식: ["EC2 비용 관련 질문 1", "EC2 비용 관련 질문 2", "EC2 비용 관련 질문 3"]"""
-    usr_prompt_template = "#이전질문: {question}"
+def generate_followup_questions(state: GraphState) -> GraphState:
+    # sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터로 더 다양한 비용 인사이트를 얻을 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
+    # 질문은 한국어로 작성되어야 하고, 항상 3개의 배열 형태여야 합니다. EC2 서비스 관련 비용 질문만 생성합니다. 
+    # 이유나 부가 설명은 작성하지 말고 출력 형식을 따르세요. 절대 비용과 관련 없는 질문(예: RI 만료 예정일)을 생성하지 마세요.
+    # #출력 형식: ["EC2 비용 관련 질문 1", "EC2 비용 관련 질문 2", "EC2 비용 관련 질문 3"]"""
+    # usr_prompt_template = "#이전질문: {question}"
+
+    # sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)     
+    # response = converse_with_bedrock(sys_prompt, usr_prompt) 
+    # sample_questions = json.loads(response)
+    question = state["question"]
+    samples = state["sample_queries"]
     
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)     
-    response = converse_with_bedrock(sys_prompt, usr_prompt) 
-    sample_questions = json.loads(response)
+    sample_questions = [sample["input"] for sample in samples if sample["input"] != question]
+    if len(sample_questions) > 3:
+        sample_questions = sample_questions[:3]
+
     return GraphState(sample_questions=sample_questions)
 
 def build_langgraph_workflow():
@@ -902,7 +909,7 @@ if "followup_questions" not in st.session_state:
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
-        {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용 관련 무엇이든 물어보세요!"}
+        {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용과 관련해 궁금하신 점은 무엇이든 물어보세요!"}
     ]
 
 # 채팅 히스토리 표시
