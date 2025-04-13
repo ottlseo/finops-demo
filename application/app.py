@@ -139,35 +139,6 @@ def search_by_keywords(keyword):
         search_result += f"{keyword} not found"
     return search_result    
 
-def create_prompt(sys_template, user_template, **kwargs):
-    sys_prompt = [{"text": sys_template.format(**kwargs)}]
-    usr_prompt = [{"role": "user", "content": [{"text": user_template.format(**kwargs)}]}]
-    return sys_prompt, usr_prompt
-
-################## SubGraph 1) Schema Linking ##################
-
-def analyze_intent(state: GraphState) -> GraphState:
-    print(state)
-    question = state["question"]
-    sys_prompt_template = """당신은 사용자 질문의 의도를 파악하는 비서입니다. 당신의 임무는 사용자 질문을 하나로 분류하는 것입니다. 오직 'database' 또는 'general' 중 하나로만 응답해야 합니다."""
-    usr_prompt_template = """주어진 질문이 데이터베이스 조회가 필요한지 판단하세요.
-    어떠한 설명이나 이유도 포함하지 말고, 오직 아래 두 단어 중 하나만 답변으로 제공하세요:
-    - 데이터베이스 조회가 필요한 경우: database
-    - 그 외의 경우: general
-    #질문: 
-    {question}\n
-    응답 (database 또는 general 중 하나만): """
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)
-    intent = converse_with_bedrock(sys_prompt, usr_prompt)
-
-    # 응답 검증 및 정제
-    if intent not in ['general', 'database']:
-        # 잘못된 응답의 경우 기본값 설정
-        print(f"Unexpected response: {intent}. Defaulting to 'general'")
-        intent = 'general'
-    
-    return GraphState(intent=intent)
-
 def rerank(query, page_contents):
     bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=REGION)
     model_package_arn = f"arn:aws:bedrock:{REGION}::foundation-model/{RERANK_MODEL}"
@@ -204,6 +175,35 @@ def rerank(query, page_contents):
                 }
             )
     return response 
+
+def create_prompt(sys_template, user_template, **kwargs):
+    sys_prompt = [{"text": sys_template.format(**kwargs)}]
+    usr_prompt = [{"role": "user", "content": [{"text": user_template.format(**kwargs)}]}]
+    return sys_prompt, usr_prompt
+
+################## SubGraph 1) Schema Linking ##################
+
+def analyze_intent(state: GraphState) -> GraphState:
+    print(state)
+    question = state["question"]
+    sys_prompt_template = """당신은 사용자 질문의 의도를 파악하는 비서입니다. 당신의 임무는 사용자 질문을 하나로 분류하는 것입니다. 오직 'database' 또는 'general' 중 하나로만 응답해야 합니다."""
+    usr_prompt_template = """주어진 질문이 데이터베이스 조회가 필요한지 판단하세요.
+    어떠한 설명이나 이유도 포함하지 말고, 오직 아래 두 단어 중 하나만 답변으로 제공하세요:
+    - 데이터베이스 조회가 필요한 경우: database
+    - 그 외의 경우: general
+    #질문: 
+    {question}\n
+    응답 (database 또는 general 중 하나만): """
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question)
+    intent = converse_with_bedrock(sys_prompt, usr_prompt)
+
+    # 응답 검증 및 정제
+    if intent not in ['general', 'database']:
+        # 잘못된 응답의 경우 기본값 설정
+        print(f"Unexpected response: {intent}. Defaulting to 'general'")
+        intent = 'general'
+    
+    return GraphState(intent=intent)
 
 def get_sample_queries(state: GraphState) -> GraphState: 
     question = state["question"]
@@ -744,6 +744,9 @@ def print_graph_results(app, query: str):
                                 st.info("🚀 분석 결과를 확인하고 있습니다...")
                             elif key == "generate_answer":
                                 st.info("📝 응답을 생성하고 있습니다...")
+                            elif key == "generate_followup_questions":
+                                if isinstance(value, dict) and 'sample_questions' in value:
+                                    st.session_state.followup_questions = value['sample_questions']
                     
                     # 최종 답변 처리
                     if 'answer' in value:
