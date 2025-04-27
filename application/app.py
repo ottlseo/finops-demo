@@ -612,9 +612,9 @@ def get_database_answer(state: GraphState) -> GraphState:
     return GraphState(answer=answer, query_state=query_state)
 
 def check_text2chart_readiness(state: GraphState) -> GraphState:
-    answer = state["answer"]
-    query_state = state["query_state"]
-    question = query_state["question"]
+    question = state["question"]
+    query_state = copy.deepcopy(state["query_state"])
+    query_result = query_state["result"]
     
     sys_prompt_template = """당신은 SQL 쿼리 실행 결과로 나온 데이터에 대해 시각화된 Chart 생성 가능 여부를 판단하는 시스템입니다. 
     오직 'Ready' 또는 'Not Ready' 중 하나로만 응답해야 합니다.
@@ -622,21 +622,89 @@ def check_text2chart_readiness(state: GraphState) -> GraphState:
     지침
     1. 주어진 질문, SQL 쿼리 실행 결과 데이터를 분석합니다.
     2. 제공된 데이터로 유효한 Chart를 생성할 수 있는지 확인합니다.
-    3. 차트를 생성하기에 충분한 정보가 있으면 'Ready'으로만 응답하고, 그렇지 않은 경우 'Not Ready'으로만 응답합니다.
+    3. 차트를 생성하기에 적합한 데이터라면 'Ready'으로만 응답하고, 그렇지 않은 경우 'Not Ready'으로만 응답합니다. 만약 표시할 데이터의 종류가 1개이거나, 데이터가 충분하지 않은 경우 차트를 만드는 것이 불필요하므로 'Not Ready'로 응답해야 합니다. 
     4. 어떠한 설명이나 이유도 포함하지 말고, 오직 'Ready' 또는 'Not Ready' 중 하나만 답변으로 제공하세요.
     """
     usr_prompt_template = """주어진 정보를 바탕으로 Chart 생성이 가능한지 판단하세요.\n
     #질문: 
     {question}\n
     #데이터베이스 쿼리 결과:
-    {answer}\n
+    {query_result}\n
     응답 (Ready 또는 Not Ready 중 하나만):"""
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query_result=query_result)
     readiness = converse_with_bedrock(sys_prompt, usr_prompt)
+    print(readiness)
     
     return GraphState(readiness=readiness)
 
 def generate_code_for_chart(state: GraphState) -> GraphState:
+    question = state["question"]
+    dataset_description = state["answer"]
+    query_state = copy.deepcopy(state["query_state"])
+    dataset = query_state["result"]
+    sys_prompt_template =  '''
+                당신은 데이터 분석과 시각화 전문가입니다.
+                주어진 structured dataset, dataset의 컬럼 정보, 그리고 사용자의 분석 요청사항을 바탕으로 적절한 차트를 생성하는 Python 코드를 작성하는 것이 당신의 임무입니다.
+
+                <task>
+                사용자의 요청에 적합한 차트생성 python 코드 작성
+                </task>
+
+                <input>
+                1. question: 어떤 분석을 원하는지에 대한 설명
+                2. dataset: question의 결과로써, 차트로 시각화할 데이터셋
+                3. dataset_description: 결과 데이터에 대한 자세한 설명
+                </input>
+                
+                <output_format>
+                JSON 형식으로 다음 형태로 응답하세요. 절대 JSON 포멧 외 텍스트는 넣지 마세요.:
+                {{
+                    "code": """사용자의 요청을 충족시키는 차트를 생성하는 Python 코드"""
+                    "img_path": """생성된 차트의 저장 경로"""
+                }}
+                </output_format>
+
+                <instruction>
+                1. 데이터셋과 컬럼 정보를 신중히 분석하세요.
+                2. 사용자의 분석 요청사항을 정확히 이해하세요.
+                3. 요청사항에 가장 적합한 차트 유형을 선택하세요 (예: 막대 그래프, 선 그래프, 산점도, 파이 차트 등).
+                4. 선택한 차트 유형에 맞는 Python 라이브러리를 사용하세요 (예: matplotlib, seaborn, plotly 등).
+                5. 데이터 전처리가 필요한 경우 pandas를 사용하여 데이터를 적절히 가공하세요.
+                6. 차트의 제목, 축 레이블, 범례 등을 명확하게 설정하세요.
+                7. 필요한 경우 차트의 색상, 스타일, 크기 등을 조정하여 가독성을 높이세요.
+                8. 코드에 대한 설명 (주석, "#")은 제외합니다.
+                9. 코드 실행 시 발생할 수 있는 예외 상황을 고려하여 적절한 예외 처리를 포함하세요.
+                10. 생성된 차트를 저장하거나 표시하는 코드를 포함하세요.
+                11. 생성된 코드 수행에 필요한 패키지들은 반드시 import 하세요.
+                12. 차트는 모두 영어로 표현해 주세요.
+                </instruction>
+
+                <consideration>
+                1. 사용자가 제공한 데이터셋의 구조와 크기에 따라 코드를 최적화하세요.
+                2. 복잡한 분석 요청의 경우, 단계별로 접근하여 중간 결과를 확인할 수 있도록 코드를 구성하세요.
+                3. 데이터의 특성에 따라 적절한 정규화나 스케일링을 고려하세요.
+                4. 대규모 데이터셋의 경우 성능을 고려하여 코드를 작성하세요.
+                5. "plt.style.use('seaborn')" 코드는 사용하지 마세요.
+                6. python의 string code 수행방법(exec())을 사용하려고 합니다. "unterminated string literal" 에러가 발생하지 않게 코드를 작성하세요.\n
+                7. 코드가 길어 다음 라인에 연속해서 작성해야 하는 경우, backslash(\)를 사용하여 라인을 연결하세요.
+                8. 이 지침을 따라 사용자의 요청에 맞는 정확하고 효과적인 차트 생성 코드를 작성하고, JSON 형식으로 출력하세요.
+                9. 차트는 show()함수를 통해 시각화하며, "./output/chart.png"로 저장하고, 경로는 output_format에 맞춰 저장하세요.
+                10. 만약 코드 수행에 대한 에러(<error_log>가 주어질 경우, 에러를 고려해서 코드를 수정하세요.
+                </consideration>
+                '''
+    usr_prompt_template = """
+                #질문: {question}
+                #결과: {dataset}
+                #결과 설명: {dataset_description}
+                Variable `df: pd.DataFrame` is already declared."""
+    #에러 로그: {error_log}
+
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, dataset=dataset, dataset_description=dataset_description)
+    chart_code = converse_with_bedrock(sys_prompt, usr_prompt)
+    print(usr_prompt)
+    print(chart_code)
+    query_state["chart_code"] = chart_code 
+
     return GraphState(query_state=state)
 
 def generate_chart(state: GraphState) -> GraphState:
@@ -683,6 +751,11 @@ def build_langgraph_workflow(chart_option=True):
     workflow.add_node("generate_followup_questions", generate_followup_questions)
     workflow.add_node("handle_failure", handle_failure)
     workflow.add_node("get_relevant_columns", get_relevant_columns)
+
+    # SubGraph3 Nodes - Chart Generation
+    workflow.add_node("check_text2chart_readiness", check_text2chart_readiness)
+    workflow.add_node("generate_code_for_chart", generate_code_for_chart)
+    workflow.add_node("generate_chart", generate_chart)
 
     # Edge from Entry to SubGraph1
     workflow.add_conditional_edges(
@@ -941,19 +1014,6 @@ def handle_query(query):
 
 boto3_client = init_boto3_client(REGION)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
-app = build_langgraph_workflow(chart_option=st.session_state["text2chart"])
-
-################## chatbot ui ##################
-
-st.set_page_config(layout="wide")
-st.title("FinOps - AWS Cost and Usage Report Analysis") 
-
-col1, col2 = st.columns(2)
-with col1:
-    st.caption('''[Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
-with col2: 
-    show_log = st.toggle("Text2SQL 로그 확인하기", value=True)
-    st.session_state["text2chart"] = st.toggle("분석 내용을 Chart로 시각화하기", value=True)
 
 initial_questions = [
     "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요.",
@@ -970,6 +1030,21 @@ if "messages" not in st.session_state:
     st.session_state["messages"] = [
         {"role": "assistant", "content": "안녕하세요, FinOps 챗봇입니다. AWS 비용과 관련해 궁금하신 점은 무엇이든 물어보세요!"}
     ]
+
+
+app = build_langgraph_workflow(chart_option=st.session_state["text2chart"])
+
+################## chatbot ui ##################
+
+st.set_page_config(layout="wide")
+st.title("FinOps - AWS Cost and Usage Report Analysis") 
+
+col1, col2 = st.columns(2)
+with col1:
+    st.caption('''[Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
+with col2: 
+    show_log = st.toggle("Text2SQL 로그 확인하기", value=True)
+    st.session_state["text2chart"] = st.toggle("분석 내용을 Chart로 시각화하기", value=True)
 
 # 채팅 히스토리 표시
 for msg in st.session_state.messages:
