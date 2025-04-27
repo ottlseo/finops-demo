@@ -606,7 +606,41 @@ def get_database_answer(state: GraphState) -> GraphState:
         sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, failed_step=failed_step, message=message)    
         
     answer = converse_with_bedrock(sys_prompt, usr_prompt)
-    return GraphState(answer=answer)
+
+    # query_state["answer"] = answer
+    
+    return GraphState(answer=answer, query_state=query_state)
+
+def check_text2chart_readiness(state: GraphState) -> GraphState:
+    answer = state["answer"]
+    query_state = state["query_state"]
+    question = query_state["question"]
+    
+    sys_prompt_template = """당신은 SQL 쿼리 실행 결과로 나온 데이터에 대해 시각화된 Chart 생성 가능 여부를 판단하는 시스템입니다. 
+    오직 'Ready' 또는 'Not Ready' 중 하나로만 응답해야 합니다.
+
+    지침
+    1. 주어진 질문, SQL 쿼리 실행 결과 데이터를 분석합니다.
+    2. 제공된 데이터로 유효한 Chart를 생성할 수 있는지 확인합니다.
+    3. 차트를 생성하기에 충분한 정보가 있으면 'Ready'으로만 응답하고, 그렇지 않은 경우 'Not Ready'으로만 응답합니다.
+    4. 어떠한 설명이나 이유도 포함하지 말고, 오직 'Ready' 또는 'Not Ready' 중 하나만 답변으로 제공하세요.
+    """
+    usr_prompt_template = """주어진 정보를 바탕으로 Chart 생성이 가능한지 판단하세요.\n
+    #질문: 
+    {question}\n
+    #데이터베이스 쿼리 결과:
+    {answer}\n
+    응답 (Ready 또는 Not Ready 중 하나만):"""
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
+    readiness = converse_with_bedrock(sys_prompt, usr_prompt)
+    
+    return GraphState(readiness=readiness)
+
+def generate_code_for_chart(state: GraphState) -> GraphState:
+    return GraphState(query_state=state)
+
+def generate_chart(state: GraphState) -> GraphState:
+    return GraphState(query_state=state)
 
 def generate_followup_questions(state: GraphState) -> GraphState:
     # sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터로 더 다양한 비용 인사이트를 얻을 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
@@ -627,7 +661,7 @@ def generate_followup_questions(state: GraphState) -> GraphState:
 
     return GraphState(sample_questions=sample_questions)
 
-def build_langgraph_workflow():
+def build_langgraph_workflow(chart_option=True):
     workflow = StateGraph(GraphState)
 
     # Global Nodes
@@ -704,9 +738,27 @@ def build_langgraph_workflow():
     )
     workflow.add_edge("get_relevant_columns", "generate_query")
 
-    # Edges to END
-    workflow.add_edge("get_database_answer", "generate_followup_questions")
+    # Edges to chart processing (if enabled) and then to followup questions
+    if chart_option:
+        workflow.add_edge("get_database_answer", "check_text2chart_readiness")
+         
+        workflow.add_conditional_edges(
+            "check_text2chart_readiness",
+            next_step_by_readiness,
+            {
+                "Ready": "generate_code_for_chart",
+                "Not Ready": "generate_followup_questions"
+            }
+        )
+        workflow.add_edge("generate_code_for_chart", "generate_chart")
+        workflow.add_edge("generate_chart", "generate_followup_questions")
+    else:
+        workflow.add_edge("get_database_answer", "generate_followup_questions")
+    
+    # General answers always go directly to followup questions
     workflow.add_edge("get_general_answer", "generate_followup_questions")
+    
+    # Followup questions is always the final step
     workflow.add_edge("generate_followup_questions", END)
 
     memory = MemorySaver()
@@ -889,7 +941,7 @@ def handle_query(query):
 
 boto3_client = init_boto3_client(REGION)
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources()
-app = build_langgraph_workflow()
+app = build_langgraph_workflow(chart_option=st.session_state["text2chart"])
 
 ################## chatbot ui ##################
 
@@ -901,6 +953,7 @@ with col1:
     st.caption('''[Github](https://github.com/ottlseo/finops-demo/)에서 코드를 확인하실 수 있습니다.''')
 with col2: 
     show_log = st.toggle("Text2SQL 로그 확인하기", value=True)
+    st.session_state["text2chart"] = st.toggle("분석 내용을 Chart로 시각화하기", value=True)
 
 initial_questions = [
     "온디맨드와 예약 인스턴스 사용량을 인스턴스 타입별로 비교해주세요.",
@@ -909,6 +962,9 @@ initial_questions = [
 ]
 if "followup_questions" not in st.session_state:
     st.session_state["followup_questions"] = initial_questions
+
+if "text2chart" not in st.session_state:
+    st.session_state["text2chart"] = True
 
 if "messages" not in st.session_state:
     st.session_state["messages"] = [
