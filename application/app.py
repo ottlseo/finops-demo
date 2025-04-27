@@ -189,7 +189,6 @@ def create_prompt(sys_template, user_template, **kwargs):
 ################## SubGraph 1) Schema Linking ##################
 
 def analyze_intent(state: GraphState) -> GraphState:
-    print(state)
     question = state["question"]
     sys_prompt_template = """당신은 사용자 질문의 의도를 파악하는 비서입니다. 당신의 임무는 사용자 질문을 하나로 분류하는 것입니다. 오직 'database' 또는 'general' 중 하나로만 응답해야 합니다."""
     usr_prompt_template = """주어진 질문이 데이터베이스 조회가 필요한지 판단하세요.
@@ -365,7 +364,7 @@ def validate_and_fix_service_name(query: str, valid_services: set) -> tuple[str,
     return query, True, ""
 
 def generate_query(state: GraphState) -> GraphState:
-    print("Current state:", state) 
+    # print("Current state:", state) 
     dialect = DIALECT
     new_query_state = copy.deepcopy(initial_query_state)
     question = state["question"]
@@ -712,40 +711,40 @@ def generate_code_for_chart(state: GraphState) -> GraphState:
                                            dataset_description=dataset_description, 
                                            error_log="None" if chart_error == "None" else chart_error
                                            )
-    chart_code = converse_with_bedrock(sys_prompt, usr_prompt)
-    query_state["chart_code"] = chart_code
+    response = converse_with_bedrock(sys_prompt, usr_prompt)
+    results = eval(response)
+    chart_code = results["code"]
+    chart_img_path = results["img_path"]
 
+    query_state["chart_code"] = chart_code
+    query_state["chart_img_path"] = chart_img_path
+    
     return GraphState(query_state=query_state)
 
 def generate_chart(state: GraphState) -> GraphState:
     query_state = copy.deepcopy(state["query_state"])
     chart_code = query_state["chart_code"]
+    chart_img_path = query_state["chart_img_path"]
     print(chart_code)
 
-    # 절대 경로 사용
-    current_dir = os.getcwd()
-    output_dir = os.path.join(current_dir, "output")
-    img_path = os.path.join(output_dir, "chart.png")
-    os.makedirs(output_dir, exist_ok=True) # output 디렉토리가 없으면 생성
-    print(f"Chart will be saved to: {img_path}")
-    
     try:
         exec(chart_code)
+        print(f"Chart is saved to: {chart_img_path}")
         
         # 파일이 존재하는지 확인
-        if os.path.exists(img_path):
+        if os.path.exists(chart_img_path):
+            with open(chart_img_path, "rb") as image_file:
+                img_bytes = image_file.read()
+                # img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                # base64_string = base64.b64decode(img_base64)
+            image_stream = io.BytesIO(img_bytes)
+            # with st.expander("📊 차트를 생성하고 있습니다...", expanded=False):
+            st.image(image_stream)
+
             # query_state에 성공 정보 추가
             query_state["status"] = "success"
             # query_state["chart_img"] = image_stream
-            query_state["chart_img_path"] = img_path  # 경로 저장
             return GraphState(query_state=query_state)
-            # with open(img_path, "rb") as image_file:
-                # img_bytes = image_file.read()
-                # img_base64 = base64.b64encode(img_bytes).decode('utf-8')
-                # base64_string = base64.b64decode(img_base64)
-            # image_stream = io.BytesIO(img_bytes)
-            # with st.expander("📊 차트를 생성하고 있습니다...", expanded=False):
-            #     st.image(image_stream)
         else:
             pass 
     
@@ -1051,16 +1050,18 @@ def print_graph_results_with_details(app, query: str):
                                         st.session_state.followup_questions = value['sample_questions']
             
                     with response_container:
-                        if isinstance(value, dict) and 'chart_img_path' in value:
-                            st.image(value['chart_img_path'])
-                            # st.session_state.messages.append(
-                            #     {"role": "assistant", "content": value['answer']}
-                            # )
                         if isinstance(value, dict) and 'answer' in value: #if isinstance(value, dict) and 'sample_questions' in value:
                             st.markdown(value['answer'])
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
                             )
+                        if isinstance(value, dict) and 'chart_img_path' in value:
+                            img_path = value['chart_img_path']
+                            print(value['chart_img_path'])
+                            st.image(img_path, use_column_width=True)
+                            # st.session_state.messages.append(
+                            #     {"role": "assistant", "content": value['answer']}
+                            # )
 
             # # 최종 결과 표시
             # with progress_container:
