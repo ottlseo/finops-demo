@@ -30,3 +30,4 @@ termcolor==1.1.0
 tokenizers==0.15.2
 transformers==4.39.1
 unstructured==0.7.12
+ipython
