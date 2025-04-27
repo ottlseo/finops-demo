@@ -3,7 +3,12 @@ import boto3
 import json
 import copy
 import re
+import base64
+import io
+import os
+import traceback
 from typing import TypedDict
+from IPython.display import Image, display
 from botocore.config import Config
 from sqlalchemy import create_engine, inspect, text
 from sqlalchemy.orm import sessionmaker
@@ -21,7 +26,7 @@ engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
 db = SQLDatabase(engine)
 Session = sessionmaker(bind=engine)
 
-llm_model = SONNET # TODO: -> NOVA_PRO
+llm_model = SONNET
 csv_list_response_format = "Your response should be a list of comma separated values, eg: `foo, bar, baz` or `foo,bar,baz`"
 json_response_format = """'The output should be formatted as a JSON instance that conforms to the JSON schema below.\n\nAs an example, for the schema {"properties": {"foo": {"title": "Foo", "description": "a list of strings", "type": "array", "items": {"type": "string"}}}, "required": ["foo"]}\nthe object {"foo": ["bar", "baz"]} is a well-formatted instance of the schema. The object {"properties": {"foo": ["bar", "baz"]}} is not well-formatted.\n\nHere is the output schema:\n```\n{"properties": {"setup": {"title": "Setup", "description": "question to set up a joke", "type": "string"}, "punchline": {"title": "Punchline", "description": "answer to resolve the joke", "type": "string"}}, "required": ["setup", "punchline"]}\n```'"""
 
@@ -642,6 +647,8 @@ def generate_code_for_chart(state: GraphState) -> GraphState:
     dataset_description = state["answer"]
     query_state = copy.deepcopy(state["query_state"])
     dataset = query_state["result"]
+    chart_error = query_state.get("chart_error", "None")
+
     sys_prompt_template =  '''
                 당신은 데이터 분석과 시각화 전문가입니다.
                 주어진 structured dataset, dataset의 컬럼 정보, 그리고 사용자의 분석 요청사항을 바탕으로 적절한 차트를 생성하는 Python 코드를 작성하는 것이 당신의 임무입니다.
@@ -696,19 +703,64 @@ def generate_code_for_chart(state: GraphState) -> GraphState:
                 #질문: {question}
                 #결과: {dataset}
                 #결과 설명: {dataset_description}
+                #에러 로그: {error_log}
                 Variable `df: pd.DataFrame` is already declared."""
-    #에러 로그: {error_log}
 
-    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, question=question, dataset=dataset, dataset_description=dataset_description)
+    sys_prompt, usr_prompt = create_prompt(sys_prompt_template, usr_prompt_template, 
+                                           question=question, 
+                                           dataset=dataset, 
+                                           dataset_description=dataset_description, 
+                                           error_log="None" if chart_error == "None" else chart_error
+                                           )
     chart_code = converse_with_bedrock(sys_prompt, usr_prompt)
-    print(usr_prompt)
-    print(chart_code)
-    query_state["chart_code"] = chart_code 
+    query_state["chart_code"] = chart_code
 
-    return GraphState(query_state=state)
+    return GraphState(query_state=query_state)
 
 def generate_chart(state: GraphState) -> GraphState:
-    return GraphState(query_state=state)
+    query_state = copy.deepcopy(state["query_state"])
+    chart_code = query_state["chart_code"]
+    print(chart_code)
+
+    # 절대 경로 사용
+    current_dir = os.getcwd()
+    output_dir = os.path.join(current_dir, "output")
+    img_path = os.path.join(output_dir, "chart.png")
+    os.makedirs(output_dir, exist_ok=True) # output 디렉토리가 없으면 생성
+    print(f"Chart will be saved to: {img_path}")
+    
+    try:
+        exec(chart_code)
+        
+        # 파일이 존재하는지 확인
+        if os.path.exists(img_path):
+            # query_state에 성공 정보 추가
+            query_state["status"] = "success"
+            # query_state["chart_img"] = image_stream
+            query_state["chart_img_path"] = img_path  # 경로 저장
+            return GraphState(query_state=query_state)
+            # with open(img_path, "rb") as image_file:
+                # img_bytes = image_file.read()
+                # img_base64 = base64.b64encode(img_bytes).decode('utf-8')
+                # base64_string = base64.b64decode(img_base64)
+            # image_stream = io.BytesIO(img_bytes)
+            # with st.expander("📊 차트를 생성하고 있습니다...", expanded=False):
+            #     st.image(image_stream)
+        else:
+            pass 
+    
+    except Exception as e:
+        error_type = type(e).__name__
+        error_message = str(e)
+        error_traceback = traceback.format_exc()
+
+        error = f"Error Type: {error_type}\nError Message: {error_message}\n\nTraceback:\n{error_traceback}"
+        print(f"error: {error}")
+        
+        # query_state에 오류 정보 추가
+        query_state["status"] = "error"
+        query_state["chart_error"] = error
+        return GraphState(query_state=query_state)
 
 def generate_followup_questions(state: GraphState) -> GraphState:
     # sys_prompt_template = """당신은 AWS 비용 분석 전문가입니다. 사용자가 CUR 데이터로 더 다양한 비용 인사이트를 얻을 수 있도록, 현재 질문과 비슷한 CUR 관련 질문 3가지를 추천해주세요.
@@ -736,6 +788,7 @@ def build_langgraph_workflow(chart_option=True):
     workflow.add_node("analyze_intent", analyze_intent)
     workflow.add_node("get_general_answer", get_general_answer)
     workflow.add_node("get_database_answer", get_database_answer)
+    workflow.add_node("generate_followup_questions", generate_followup_questions)
     workflow.set_entry_point("analyze_intent")
 
     # SubGraph1 Nodes - Schema Linking
@@ -748,7 +801,6 @@ def build_langgraph_workflow(chart_option=True):
     workflow.add_node("generate_query", generate_query)
     workflow.add_node("validate_query", validate_query)
     workflow.add_node("execute_query", execute_query)
-    workflow.add_node("generate_followup_questions", generate_followup_questions)
     workflow.add_node("handle_failure", handle_failure)
     workflow.add_node("get_relevant_columns", get_relevant_columns)
 
@@ -824,7 +876,15 @@ def build_langgraph_workflow(chart_option=True):
             }
         )
         workflow.add_edge("generate_code_for_chart", "generate_chart")
-        workflow.add_edge("generate_chart", "generate_followup_questions")
+        workflow.add_conditional_edges(
+            "generate_chart",
+            next_step_by_query_state,
+            {
+                "success": "generate_followup_questions",
+                "error": "generate_code_for_chart",
+            },
+        )
+
     else:
         workflow.add_edge("get_database_answer", "generate_followup_questions")
     
@@ -842,7 +902,6 @@ def print_graph_results(app, query: str):
     config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
     inputs = GraphState(question=query)
 
-    # 어시스턴트 응답
     with st.chat_message("assistant"):
         progress_container = st.container() # 진행 상황 컨테이너
         response_container = st.container() # 최종 응답 컨테이너
@@ -867,7 +926,9 @@ def print_graph_results(app, query: str):
                                 st.info("✅ 오류를 분석하고 있습니다...")
                             elif key == "execute_query":
                                 st.info("🚀 분석 결과를 확인하고 있습니다...")
-                            elif key == "generate_answer":
+                            elif key == "generate_code_for_chart":
+                                st.info("📊 분석 결과를 시각화하고 있습니다...")
+                            elif key == "generate_chart":
                                 st.info("📝 응답을 생성하고 있습니다...")
                             elif key == "generate_followup_questions":
                                 if isinstance(value, dict) and 'sample_questions' in value:
@@ -975,16 +1036,32 @@ def print_graph_results_with_details(app, query: str):
                                                 st.markdown(f"**{k}:**")
                                                 st.code(str(v), wrap_lines=True)
                                     node_results[key] = ("📝", "Final Response", answer_value)
+                                elif key == "generate_code_for_chart":
+                                    chart_code = value.get('query_state', {}).get('chart_code', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("📊 결과를 시각화하고 있습니다...", expanded=False):
+                                        st.code(str(chart_code), language="python", wrap_lines=True)
+                                    node_results[key] = ("📊", "Chart Generation Code", chart_code)
+                                elif key == "generate_chart":
+                                    chart_img_path = value.get('query_state', {}).get('chart_img_path', '') if isinstance(value, dict) else str(value)
+                                    with st.expander("✍️ 차트를 생성합니다..."):
+                                        st.image(chart_img_path)
+                                    node_results[key] = ("✍️", "Generated Chart", chart_img_path)
                                 elif key == "generate_followup_questions":
                                     if isinstance(value, dict) and 'sample_questions' in value:
                                         st.session_state.followup_questions = value['sample_questions']
             
                     with response_container:
-                        if isinstance(value, dict) and 'answer' in value:
+                        if isinstance(value, dict) and 'chart_img_path' in value:
+                            st.image(value['chart_img_path'])
+                            # st.session_state.messages.append(
+                            #     {"role": "assistant", "content": value['answer']}
+                            # )
+                        if isinstance(value, dict) and 'answer' in value: #if isinstance(value, dict) and 'sample_questions' in value:
                             st.markdown(value['answer'])
                             st.session_state.messages.append(
                                 {"role": "assistant", "content": value['answer']}
                             )
+
             # # 최종 결과 표시
             # with progress_container:
             #     st.markdown("### 🔍 Execution Details")
