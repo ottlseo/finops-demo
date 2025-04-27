@@ -1059,21 +1059,8 @@ def print_graph_results_with_details(app, query: str):
                             img_path = value['chart_img_path']
                             print(value['chart_img_path'])
                             st.image(img_path, use_column_width=True)
-                            # st.session_state.messages.append(
-                            #     {"role": "assistant", "content": value['answer']}
-                            # )
+                            # TODO: session_state에 img_bytes 저장
 
-            # # 최종 결과 표시
-            # with progress_container:
-            #     st.markdown("### 🔍 Execution Details")
-            #     for node, (icon, title, result) in node_results.items():
-            #         with st.expander(f"{icon} {title}", expanded=False):
-            #             if isinstance(result, dict):
-            #                 for k, v in result.items():
-            #                     st.markdown(f"**{k}:**")
-            #                     st.code(str(v), wrap_lines=True)
-            #             else:
-            #                 st.code(str(result), wrap_lines=True)
         except GraphRecursionError as e:
             st.error(f"⚠️ I encountered an error: {str(e)}")
             st.session_state.messages.append(
