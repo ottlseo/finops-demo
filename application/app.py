@@ -8,32 +8,34 @@ from app_utils import AppUtils
 from config import *
 from dotenv import load_dotenv
 from langfuse.callback import CallbackHandler
-# from langfuse import Langfuse
 import os
 
-load_dotenv("./.env")
-langfuse_handler = CallbackHandler(
-    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-    host=os.getenv("LANGFUSE_HOST"),
-)
-print(langfuse_handler.auth_check())
+# Langfuse 연결 시도
+try:
+    load_dotenv("./.env")
+    langfuse_handler = CallbackHandler(
+        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+        host=os.getenv("LANGFUSE_HOST"),
+    )
+    langfuse_option = langfuse_handler.auth_check()
+except:
+    langfuse_option = False
 
-# Initialize database connection
+# DB Connection 초기화
 engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
 Session = sessionmaker(bind=engine)
 
-# Initialize Bedrock client
-bedrock_client = BedrockClient(region=REGION, llm_model=SONNET)
+# Bedrock client
+bedrock_client = BedrockClient(region=REGION, llm_model=SONNET, langfuse_option=langfuse_option)
 
-# Initialize OpenSearch resources
+# OpenSearch client
 sql_search_client, table_search_client, sql_retriever, table_retriever = init_search_resources(
     region_name=REGION,
     example_queries_index=EXAMPLE_QUERIES_INDEX,
     table_description_index=TABLE_DESCRIPTION_INDEX
 )
 
-# Initialize workflow builder with refactored structure
 workflow_builder = WorkflowBuilder(
     bedrock_client=bedrock_client,
     sql_search_client=sql_search_client,
