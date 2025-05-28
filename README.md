@@ -39,7 +39,7 @@ streamlit run app.py
 ├── application/                 # 메인 애플리케이션 directory
 │   ├── app.py                  
 │   ├── requirements.txt        
-│   └── src/                    # 애플리케이션 소스 코드 (하위 구조는 생략)
+│   └── lib/                    # 애플리케이션 소스 코드 (하위 구조는 생략)
 │
 └── data_preparation/          # Text2SQL 작업에 필요한 데이터 증강 및 OpenSearch 인덱싱을 위한 코드 directory
     ├── input_data/           # Source schema definitions and example queries
