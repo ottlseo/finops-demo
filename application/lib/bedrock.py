@@ -1,5 +1,6 @@
 import boto3
 from botocore.config import Config
+from botocore.exceptions import ClientError
 import json
 from typing import List, Dict, Any, Union
 from langfuse.decorators import observe, langfuse_context
@@ -9,6 +10,8 @@ class BedrockClient:
         self.region = region
         self.llm_model = llm_model
         self.client = self.init_boto3_client(region)
+        # self.verbose = False
+        # self.llm = None
     
     def init_boto3_client(self, region: str):
         """Initialize boto3 client with retry configuration"""
@@ -77,84 +80,30 @@ class BedrockClient:
             model_parameters=inference_config,
             # metadata=kwargs_clone
         )
-        ##############################3
-        # 2. model call with error handling
-        ##############################3
-        import time
-        
-        max_attempts = 3
-        delay_seconds = 1
-        response = None
-        ai_message = None
-        last_error = None
-        
-        for attempt in range(max_attempts):
-            try:
-                response, ai_message = self.chain(
-                    llm=self.llm,
-                    system_prompts=system_prompts,
-                    messages=messages,
-                    tool_config=tool_config,
-                    verbose=self.verbose
-                )
-                # 성공하면 반복문 종료
-                break
-                
-            except (ClientError, Exception) as e:
-                last_error = e
-                error_message = f"Attempt {attempt + 1}/{max_attempts}: ERROR: Can't invoke '{modelId}'. Reason: {e}"
-                print(error_message)
-                
-                # 마지막 시도가 아니면 대기 후 재시도
-                if attempt < max_attempts - 1:
-                    time.sleep(delay_seconds)
-                    continue
-                
-                # 마지막 시도에서 실패한 경우
-                final_error_message = f"ERROR: Can't invoke '{modelId}' after {max_attempts} attempts. Last error: {last_error}"
-                langfuse_context.update_current_observation(level="ERROR", status_message=final_error_message)
-                print("Error in exception during calling chain: ", final_error_message)
-                return {"text": final_error_message}, {"error": final_error_message}
-    
-
-        ##############################3
-        # 3. extract response metadata
-        ##############################3
-        # Langfuse에 출력 텍스트, 토큰 사용량, 응답 메타데이터를 기록합니다.
         try:
-            response_text = response["text"]
-            reasoning_text = response["reasoning"]
-            print("## response in wrapped_bedrock_converse: \n", json.dumps(response, indent=2, ensure_ascii=False))
-
-            token_usage = response["token_usage"]
-            input_tokens = token_usage.get("inputTokens", 0)
-            output_tokens = token_usage.get("outputTokens", 0)
-            total_tokens = token_usage.get("totalTokens", 0)
-
-            langfuse_context.update_current_observation(
-                output=response_text,
-                usage_details={
-                    "input": input_tokens,
-                    "output": output_tokens,
-                    "total": total_tokens,
-                },
-                metadata={
-                    "reasoning_text": reasoning_text, 
-                    "toolUse_text": response.get("toolUse", {}),
-                    # "ResponseMetadata": response.get("ResponseMetadata", {}),
-                }
-            )
-
+            response = bedrock_runtime.converse(**kwargs)
         except (ClientError, Exception) as e:
-            print("## response in except in adding to langfuse: \n", response) 
-            error_message = f"ERROR: Can't parse:  Reason: {e}"
+            error_message = f"ERROR: Can't invoke '{modelId}'. Reason: {e}"
             langfuse_context.update_current_observation(level="ERROR", status_message=error_message)
             print(error_message)
-            # Always return a dict with 'text' key to avoid KeyError downstream
-            return {"text": error_message}, {"error": error_message}
-
-        # return {"text": response_text}, ai_message
-        return response, ai_message
+            return
+        
+        # 3. extract response metadata
+        # Langfuse에 출력 텍스트, 토큰 사용량, 응답 메타데이터를 기록합니다.
+        response_text = response["output"]["message"]["content"][0]["text"]
+        langfuse_context.update_current_observation(
+            output=response_text,
+            usage_details={
+                "input": response["usage"]["inputTokens"],
+                "output": response["usage"]["outputTokens"],
+                "total": response["usage"]["totalTokens"]
+            },
+            metadata={
+                "ResponseMetadata": response["ResponseMetadata"],
+            }
+        )
+        
+        return response_text
 
     def rerank(self, query: str, page_contents: List[Dict[str, Any]]):
         """Rerank search results using Bedrock reranking model"""
