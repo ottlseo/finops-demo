@@ -6,6 +6,18 @@ from lib.opensearch import init_search_resources
 from graph import WorkflowBuilder
 from app_utils import AppUtils
 from config import *
+from dotenv import load_dotenv
+from langfuse.callback import CallbackHandler
+import os
+
+load_dotenv("./.env")
+langfuse_handler = CallbackHandler(
+    public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
+    secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
+    host=os.getenv("LANGFUSE_HOST"),
+)
+
+print(langfuse_handler.auth_check())
 
 # Initialize database connection
 engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
@@ -33,16 +45,16 @@ workflow_builder = WorkflowBuilder(
 )
 
 # Build the workflow
-app = workflow_builder.build_finops_workflow(chart_option=st.session_state.get("text2chart", True))
+chain = workflow_builder.build_finops_workflow(chart_option=st.session_state.get("text2chart", True))
 
 # Initialize UI
-ui = AppUtils(app)
+app = AppUtils(chain)
 
 # Setup UI
-show_log = ui.setup_ui()
+show_log = app.setup_ui()
 
 # Display chat history
-ui.display_chat_history()
+app.display_chat_history()
 
 # Handle new query
 query = st.chat_input("질문을 입력하세요.")
@@ -54,9 +66,9 @@ if query:
 if "query" in st.session_state:
     query = st.session_state.query
     del st.session_state.query
-    ui.handle_query(query, show_log)
+    app.handle_query(query, show_log)
 elif query:
-    ui.handle_query(query, show_log)
+    app.handle_query(query, show_log)
 
 # Display followup questions
-ui.display_followup_questions()
+app.display_followup_questions()

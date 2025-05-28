@@ -730,5 +730,5 @@ class WorkflowBuilder:
         workflow.add_edge("generate_followup_questions", END)
 
         memory = MemorySaver()
-        app = workflow.compile(checkpointer=memory)
-        return app
+        chain = workflow.compile(checkpointer=memory)
+        return chain
