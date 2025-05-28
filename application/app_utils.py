@@ -44,9 +44,13 @@ class AppUtils:
         for msg in st.session_state.messages:
             st.chat_message(msg["role"]).write(msg["content"])
             
-    def print_graph_results(self, query: str):
+    def print_graph_results(self, langfuse_handler, query: str):
         """Display graph results in a streamlined format"""
-        config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
+        config = RunnableConfig(
+            recursion_limit=100, 
+            configurable={"thread_id": "TODO"},
+            callback=[langfuse_handler]
+            )
         inputs = {"question": query}
 
         with st.chat_message("assistant"):
@@ -99,9 +103,13 @@ class AppUtils:
                     {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
                 )
 
-    def print_graph_results_with_details(self, query: str):
+    def print_graph_results_with_details(self, langfuse_handler, query: str):
         """Display detailed graph results with intermediate steps"""
-        config = RunnableConfig(recursion_limit=100, configurable={"thread_id": "TODO"})
+        config = RunnableConfig(
+            recursion_limit=100, 
+            configurable={"thread_id": "TODO"},
+            callback=[langfuse_handler]
+            )
         inputs = {"question": query}
 
         with st.chat_message("assistant"):
@@ -215,14 +223,14 @@ class AppUtils:
                     {"role": "assistant", "content": f"⚠️ Error: {str(e)}"}
                 )
 
-    def handle_query(self, query: str, show_log: bool = False):
+    def handle_query(self, langfuse_handler, query: str, show_log: bool = False):
         """Process a user query and display results"""
         st.chat_message("user").write(query)
         st.session_state.messages.append({"role": "user", "content": query})    
         if show_log:
-            self.print_graph_results_with_details(query=query)
+            self.print_graph_results_with_details(langfuse_handler=langfuse_handler, query=query)
         else:
-            self.print_graph_results(query=query)
+            self.print_graph_results(langfuse_handler=langfuse_handler, query=query)
             
     def display_followup_questions(self):
         """Display followup question buttons"""

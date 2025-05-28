@@ -8,6 +8,7 @@ from app_utils import AppUtils
 from config import *
 from dotenv import load_dotenv
 from langfuse.callback import CallbackHandler
+# from langfuse import Langfuse
 import os
 
 load_dotenv("./.env")
@@ -16,7 +17,6 @@ langfuse_handler = CallbackHandler(
     secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
     host=os.getenv("LANGFUSE_HOST"),
 )
-
 print(langfuse_handler.auth_check())
 
 # Initialize database connection
@@ -66,9 +66,9 @@ if query:
 if "query" in st.session_state:
     query = st.session_state.query
     del st.session_state.query
-    app.handle_query(query, show_log)
+    app.handle_query(langfuse_handler, query, show_log)
 elif query:
-    app.handle_query(query, show_log)
+    app.handle_query(langfuse_handler, query, show_log)
 
 # Display followup questions
 app.display_followup_questions()

@@ -41,7 +41,7 @@ class Text2SqlHandler:
         {question}\n
         응답 (database 또는 general 중 하나만): """
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question)
-        intent = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        intent = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
 
         # 응답 검증 및 정제
         if intent not in ['general', 'database']:
@@ -74,7 +74,7 @@ class Text2SqlHandler:
         sys_prompt_template = "사용자의 일반적인 질문에 답하는 유능한 어시스턴트입니다. 질문에 대한 답을 모를 경우, 솔직하게 모른다고 인정하세요. 한국어로 답변하세요."
         usr_prompt_template = "#Question: {question}"
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question)
-        answer = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        answer = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
 
         return {"answer": answer}
     
@@ -125,7 +125,7 @@ class Text2SqlHandler:
         #사용 가능한 테이블: {table_details}\n
         응답 (Ready 또는 Not Ready 중 하나만):"""
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question, sample_queries=sample_queries, table_details=table_details)
-        readiness = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        readiness = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         
         return {"readiness": readiness}
     
@@ -142,7 +142,7 @@ class Text2SqlHandler:
         #형식: {csv_list_response_format}
         """
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question, table_inputs=table_inputs, csv_list_response_format=self.builder.csv_list_response_format)
-        selected_tables = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        selected_tables = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
 
         try:
             if selected_tables == '""':
@@ -245,7 +245,7 @@ class Text2SqlHandler:
             relavant_columns=relavant_columns,
             hint=hint
         )
-        generated_query = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        generated_query = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         
         # Validate the generated query
         valid_services = self.get_valid_service_codes()
@@ -309,7 +309,7 @@ class Text2SqlHandler:
         #쿼리 실행 계획: {query_plan}"""        
 
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question, dialect=dialect, query=query, query_plan=query_plan)
-        validated_query = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        validated_query = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         query_state["query"] = validated_query
 
         return {"query_state": query_state}
@@ -355,7 +355,7 @@ class Text2SqlHandler:
         서문이나 추가 설명 없이 유효한 JSON 문서만 제공하세요."""
 
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, query=query, message=message)
-        result = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        result = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         try:
             json_result = json.loads(result)
             failure_type = json_result.get("failure_type", "unknown")
@@ -392,7 +392,7 @@ class Text2SqlHandler:
             csv_list_response_format=self.builder.csv_list_response_format
         )
         
-        keywords = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        keywords = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         search_results = search_by_keywords(self.builder.table_search_client, keywords) if keywords else ""
 
         query_state["relevant_columns"] = {
@@ -429,7 +429,7 @@ class Text2SqlHandler:
             """
             sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question, query=query, failed_step=failed_step, message=message)    
             
-        answer = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        answer = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         
         return {"answer": answer, "query_state": query_state}
 
@@ -459,7 +459,7 @@ class Text2ChartHandler:
         {query_result}\n
         응답 (Ready 또는 Not Ready 중 하나만):"""
         sys_prompt, usr_prompt = self.builder.create_prompt(sys_prompt_template, usr_prompt_template, question=question, query_result=query_result)
-        readiness = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        readiness = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         print(readiness)
         
         return {"readiness": readiness}
@@ -534,7 +534,7 @@ class Text2ChartHandler:
                                                dataset_description=dataset_description, 
                                                error_log="None" if chart_error == "None" else chart_error
                                                )
-        response = self.builder.bedrock_client.converse_with_bedrock(sys_prompt, usr_prompt)
+        response = self.builder.bedrock_client.wrapped_bedrock_converse(sys_prompt, usr_prompt)
         results = eval(response)
         chart_code = results["code"]
         chart_img_path = results["img_path"]
