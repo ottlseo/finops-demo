@@ -1,17 +1,25 @@
 import boto3
 from botocore.config import Config
+<<<<<<< HEAD
 from botocore.exceptions import ClientError
 import json
 from typing import List, Dict, Any, Union
 from langfuse.decorators import observe, langfuse_context
+=======
+import json
+from typing import List, Dict, Any, Union
+>>>>>>> origin/main
 
 class BedrockClient:
     def __init__(self, region: str, llm_model: str):
         self.region = region
         self.llm_model = llm_model
         self.client = self.init_boto3_client(region)
+<<<<<<< HEAD
         # self.verbose = False
         # self.llm = None
+=======
+>>>>>>> origin/main
     
     def init_boto3_client(self, region: str):
         """Initialize boto3 client with retry configuration"""
@@ -38,6 +46,7 @@ class BedrockClient:
         )
         return response['output']['message']['content'][0]['text']
     
+<<<<<<< HEAD
 
     def wrapped_bedrock_converse(self, sys_prompt, usr_prompt):  #**kwargs):
 
@@ -105,6 +114,8 @@ class BedrockClient:
         
         return response_text
 
+=======
+>>>>>>> origin/main
     def rerank(self, query: str, page_contents: List[Dict[str, Any]]):
         """Rerank search results using Bedrock reranking model"""
         bedrock_agent_runtime = boto3.client('bedrock-agent-runtime', region_name=self.region)
