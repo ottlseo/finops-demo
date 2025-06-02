@@ -10,7 +10,6 @@ AWS FinOps 어시스턴트는 AWS 비용 및 사용 보고서(CUR) 데이터를 
 ### Prerequisites
 - Install Python 3.8 or higher
 - Request access to Amazon Bedrock 
-- Run all notebooks in [`/data_preparation`](./data_preparation) directory to create indexes to Amazon OpenSearch Services
 - AWS CLI configured with appropriate credentials
 
 ### Installation
@@ -19,7 +18,7 @@ AWS FinOps 어시스턴트는 AWS 비용 및 사용 보고서(CUR) 데이터를 
 git clone https://github.com/ottlseo/finops-demo.git
 ```
 
-2. Run all notebooks in [`/data_preparation` directory](./data_preparation) to create indexes to Amazon OpenSearch Services
+2. Run all notebooks in [`/data_preparation`](./data_preparation) directory to create indexes to Amazon OpenSearch Services
    - [0.setup_opensearch.ipynb](./data_preparation/0.setup_opensearch.ipynb)
    - [1.generate_sample_queries.ipynb](./data_preparation/1.generate_sample_queries.ipynb)
    - [2.generate_schema_description.ipynb](./data_preparation/2.generate_schema_description.ipynb)
