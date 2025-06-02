@@ -1,29 +1,61 @@
-# AWS FinOps Assistant: AWS Cost and Usage Reports with Text2SQL
+# AWS FinOps Assistant: AWS Cost and Usage Reports Analysis
+
+AWS FinOps Assistant provides a Text2SQL & Text2Chart chatbot interface that allows for easy analysis of AWS Cost and Usage Report (CUR) data through natural language questions. It makes complex AWS billing data queryable with simple natural language questions, making cost analysis more accessible and efficient.
 
 AWS FinOps 어시스턴트는 AWS 비용 및 사용 보고서(CUR) 데이터를 자연어 질문으로 쉽게 분석할 수 있도록 Text2SQL 챗봇 인터페이스를 제공합니다. 복잡한 AWS 청구 데이터를 간단한 자연어 질문으로 조회할 수 있게 해주어, 비용 분석을 더욱 접근하기 쉽고 효율적으로 만듭니다.
 
+![finops-demo](https://github.com/user-attachments/assets/1ffeefa1-c668-4ccd-8324-9bf1bc3bf534)
+
 # How to build
 ### Prerequisites
-- Python 3.8 or higher
-- Amazon Bedrock 액세스 요청
-- [data_preparation 디렉토리](./data_preparation) 내의 노트북 3개를 실행하여 OpenSearch에 인덱스 생성
+- Install Python 3.8 or higher
+- Request access to Amazon Bedrock 
+- Run all notebooks in [`/data_preparation`](./data_preparation) directory to create indexes to Amazon OpenSearch Services
 - AWS CLI configured with appropriate credentials
 
 ### Installation
 1. Clone the repository:
 ```bash
 git clone https://github.com/ottlseo/finops-demo.git
-cd application
 ```
 
-2. Install dependencies:
+2. Run all notebooks in [`/data_preparation` directory](./data_preparation) to create indexes to Amazon OpenSearch Services
+   - [0.setup_opensearch.ipynb](./data_preparation/0.setup_opensearch.ipynb)
+   - [1.generate_sample_queries.ipynb](./data_preparation/1.generate_sample_queries.ipynb)
+   - [2.generate_schema_description.ipynb](./data_preparation/2.generate_schema_description.ipynb)
+
+3. Install dependencies:
 ```bash
+cd application
 pip install -r requirements.txt
 ```
 
-3. Start the Streamlit application:
+4. Create `.env` file (under `./application` directory)
+```env
+REGION=us-west-2
+
+SONNET=anthropic.claude-3-5-sonnet-20241022-v2:0
+HAIKU=anthropic.claude-3-haiku-20240307-v1:0
+NOVA_PRO=amazon.nova-pro-v1:0
+
+OPENSEARCH_DOMAIN_ENDPOINT=[ENTER_YOUR_OPENSEARCH_ENDPOINT]
+OPENSEARCH_USER_ID=[ENTER_YOUR_OPENSEARCH_USERID] # raguser
+OPENSEARCH_USER_PASSWORD=[ENTER_YOUR_OPENSEARCH_PW] # MarsEarth1!
+
+TABLE_DESCRIPTION_INDEX=table_description
+EXAMPLE_QUERIES_INDEX=sample_queries
+
+ATHENA_CONNECTION_STRING=[ENTER_YOUR_OPENSEARCH_ENDPOINT]
+DIALECT=amazon_athena
+
+# Optional
+LANGFUSE_PUBLIC_KEY=[ENTER_YOUR_LANGFUSE_PUBLIC_KEY]
+LANGFUSE_SECRET_KEY=[ENTER_YOUR_LANGFUSE_SECRET_KEY]
+LANGFUSE_HOST=[ENTER_YOUR_LANGFUSE_HOST_URL]
+```
+
+5. Start the Streamlit application:
 ```bash
-cd application
 streamlit run app.py
 ```
 
@@ -37,7 +69,10 @@ streamlit run app.py
 ```
 .
 ├── application/                 # 메인 애플리케이션 directory
-│   ├── app.py                  
+│   ├── app.py
+│   ├── graph.py
+│   ├── config.py
+│   ├── .env
 │   ├── requirements.txt        
 │   └── lib/                    # 애플리케이션 소스 코드 (하위 구조는 생략)
 │
