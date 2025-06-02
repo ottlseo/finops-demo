@@ -6,17 +6,14 @@ from lib.opensearch import init_search_resources
 from graph import WorkflowBuilder
 from app_utils import AppUtils
 from config import *
-from dotenv import load_dotenv
 from langfuse.callback import CallbackHandler
-import os
 
 # Langfuse 연결 시도
 try:
-    load_dotenv("./.env")
     langfuse_handler = CallbackHandler(
-        public_key=os.getenv("LANGFUSE_PUBLIC_KEY"),
-        secret_key=os.getenv("LANGFUSE_SECRET_KEY"),
-        host=os.getenv("LANGFUSE_HOST"),
+        public_key=LANGFUSE_PUBLIC_KEY,
+        secret_key=LANGFUSE_SECRET_KEY,
+        host=LANGFUSE_HOST,
     )
     langfuse_option = langfuse_handler.auth_check()
 except:
