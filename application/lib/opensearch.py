@@ -222,7 +222,7 @@ def init_opensearch(region_name, lang_config):
             enable_rag_query,
             {
                 "region_name": region_name,
-                "index_name": 'example_queries',
+                "index_name": 'sample_queries',
                 "mapping_name": 'mappings-sql',
                 "vector": "input_v",
                 "text": "input",
@@ -237,7 +237,7 @@ def init_opensearch(region_name, lang_config):
             enable_schema_desc,
             {
                 "region_name": region_name,
-                "index_name": 'schema_descriptions',
+                "index_name": 'schema_description',
                 "mapping_name": 'mappings-detailed-schema',
                 "vector": "table_summary_v",
                 "text": "table_summary",
