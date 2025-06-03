@@ -20,7 +20,7 @@ except:
     langfuse_option = False
 
 # DB Connection 초기화
-engine = create_engine(ATHENA_CONNECTION_STRING, echo=True)
+engine = create_engine(DATABASE_CONNECTION_STRING, echo=True)
 Session = sessionmaker(bind=engine)
 
 # Bedrock client

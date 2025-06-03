@@ -87,9 +87,6 @@ class Text2SqlHandler:
         sample_questions = [sample["input"] for sample in samples if sample["input"] != question]
         if len(sample_questions) > 3:
             sample_questions = sample_questions[:3]
-        if question == "775638497521 어카운트 리소스 중에 SP 적용이 가장 시급한 인스턴스 패밀리를 알려주세요.": # for demo 
-            sample_questions = sample_questions[:2]
-            sample_questions.append("775638497521 어카운트에서 상위 10개 RI 인스턴스 타입과 비용, 인스턴스 개수를 알려주세요.")
 
         return {"sample_questions": sample_questions}
     
@@ -227,12 +224,9 @@ class Text2SqlHandler:
         hint = error_info.get("hint", "None")
 
         sys_prompt_template = """당신은 {dialect} SQL 쿼리를 작성하는 전문 데이터베이스 엔지니어입니다. 
-        AWS 서비스 이름을 사용할 때는 정확한 서비스 코드를 사용해야 합니다 (예: 'AmazonEC2', 'AWSKMS').
         오직 SQL 쿼리만을 생성해야 하며, 어떠한 설명이나 추가 텍스트도 포함해서는 안 됩니다."""
         
         usr_prompt_template = """다음 정보를 바탕으로 사용자 질문에 대한 {dialect} SQL 쿼리를 생성하세요. \n
-        WHERE절에서 service 조건을 사용할 때는 반드시 정확한 AWS 서비스 코드를 사용하세요.\n
-        예시: WHERE service = 'AmazonEC2' (O), WHERE service = 'EC2' (X)\n
         #질문: {question}\n
         #샘플 쿼리: {sample_queries}\n
         #사용 가능한 테이블: {table_details}\n
