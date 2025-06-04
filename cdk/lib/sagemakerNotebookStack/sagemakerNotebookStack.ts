@@ -20,6 +20,30 @@ export class SagemakerNotebookStack extends cdk.Stack {
       ],
     });
     
+    // Create a lifecycle configuration to clone the repository
+    const lifecycleConfig = new sagemaker.CfnNotebookInstanceLifecycleConfig(this, 'FinopsNotebookLifecycleConfig', {
+      notebookInstanceLifecycleConfigName: 'finops-notebook-lifecycle-config',
+      onCreate: [
+        {
+          content: cdk.Fn.base64(`#!/bin/bash
+set -e
+cd /home/ec2-user/SageMaker
+git clone https://github.com/ottlseo/finops-demo.git
+sudo chown -R ec2-user:ec2-user finops-demo
+echo "Repository cloned successfully"`)
+        }
+      ],
+      onStart: [
+        {
+          content: cdk.Fn.base64(`#!/bin/bash
+set -e
+cd /home/ec2-user/SageMaker/finops-demo
+git pull
+echo "Repository updated successfully"`)
+        }
+      ]
+    });
+    
     // SageMaker Notebook Instance
     const cfnNotebookInstance = new sagemaker.CfnNotebookInstance(this, 'MyCfnNotebookInstance', {
       instanceType: 'ml.m5.xlarge',
@@ -28,12 +52,7 @@ export class SagemakerNotebookStack extends cdk.Stack {
       directInternetAccess: 'Enabled',
       notebookInstanceName: 'finops-notebook-instance',
       volumeSizeInGb: 50,
-    //   lifecycleConfigName: 'notebookInstanceLifecycleConfig',
-    //   tags: [{
-    //    key: 'key',
-    //    value: 'value',
-    //   }],
-    });
-  
+      lifecycleConfigName: lifecycleConfig.notebookInstanceLifecycleConfigName,
   }
+}
 }

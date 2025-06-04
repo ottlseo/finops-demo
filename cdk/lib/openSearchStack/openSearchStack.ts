@@ -95,7 +95,7 @@ export class OpensearchStack extends Stack {
     const customResourceLambda = new lambda.Function(this, 'CustomResourceLambda', {
       runtime: lambda.Runtime.PYTHON_3_9,
       handler: 'index.on_event',
-      code: lambda.Code.fromAsset('lambda'),
+      code: lambda.Code.fromAsset('lib/openSearchStack/lambda'),
       timeout: cdk.Duration.minutes(15),
       role: lambdaRole
     });
