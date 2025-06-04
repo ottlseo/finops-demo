@@ -18,11 +18,10 @@ const envSetting = {
 const app = new App();
 
 // Deploy Sagemaker stack
-const sagemakerNotebookStack = new SagemakerNotebookStack(app, `${STACK_PREFIX}-SagemakerNotebookStack`, envSetting);
+const sagemakerNotebookStack = new SagemakerNotebookStack(app, `${STACK_PREFIX}-SmNotebookStack`, envSetting);
 
 // Deploy OpenSearch stack
 const opensearchStack = new OpensearchStack(app, `${STACK_PREFIX}-OpensearchStack`, envSetting);
-opensearchStack.addDependency(sagemakerNotebookStack);
 
 // Deploy EC2 stack
 const ec2Stack = new EC2Stack(app, `${STACK_PREFIX}-EC2Stack`, envSetting);
