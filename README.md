@@ -18,10 +18,10 @@ AWS FinOps 어시스턴트는 AWS 비용 및 사용 보고서(CUR) 데이터를 
 git clone https://github.com/ottlseo/finops-demo.git
 ```
 
-2. Run all notebooks in [`/data_preparation`](./data_preparation) directory to create indexes to Amazon OpenSearch Services
-   - [0.setup_opensearch.ipynb](./data_preparation/0.setup_opensearch.ipynb)
-   - [1.generate_sample_queries.ipynb](./data_preparation/1.generate_sample_queries.ipynb)
-   - [2.generate_schema_description.ipynb](./data_preparation/2.generate_schema_description.ipynb)
+2. Run all notebooks in [`/data_preprocessing`](./data_preprocessing) directory to create indexes to Amazon OpenSearch Services
+   - [0.setup_opensearch.ipynb](./data_preprocessing/0.setup_opensearch.ipynb)
+   - [1.generate_sample_queries.ipynb](./data_preprocessing/1.generate_sample_queries.ipynb)
+   - [2.generate_schema_description.ipynb](./data_preprocessing/2.generate_schema_description.ipynb)
 
 3. Install dependencies:
 ```bash
@@ -80,7 +80,7 @@ streamlit run app.py
 │   ├── requirements.txt        
 │   └── lib/                    # 애플리케이션 소스 코드 (하위 구조는 생략)
 │
-└── data_preparation/          # Text2SQL 작업에 필요한 데이터 증강 및 OpenSearch 인덱싱을 위한 코드 directory
+└── data_preprocessing/          # Text2SQL 작업에 필요한 데이터 증강 및 OpenSearch 인덱싱을 위한 코드 directory
     ├── input_data/           # Source schema definitions and example queries
     │   ├── cur_example_queries.sql    # Sample CUR analysis queries
     │   ├── cur_schema.json            # Base CUR schema definition
