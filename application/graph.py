@@ -245,6 +245,9 @@ class Text2SqlHandler:
             hint=hint
         )
         generated_query = self.builder.bedrock_client.invoke(sys_prompt, usr_prompt, node_name=node_name)
+        # if self.builder.dialect.lower() == "postgresql":
+        #     generated_query = re.sub(r'FROM\s+cur\.', 'FROM dev.public.', generated_query, flags=re.IGNORECASE)
+        #     generated_query = re.sub(r'JOIN\s+cur\.', 'JOIN dev.public.', generated_query, flags=re.IGNORECASE)
         
         # Validate the generated query
         valid_services = self.get_valid_service_codes()
@@ -288,10 +291,10 @@ class Text2SqlHandler:
             try:
                 explain_query = explain_statements[dialect.lower()].format(query=query)
                 
-                # # DIALECT가 postgresql인 경우에만 cur. -> dev.public. 으로 변경
-                # if self.builder.dialect.lower() == "postgresql":
-                #     explain_query = re.sub(r'FROM\s+cur\.', 'FROM dev.public.', explain_query, flags=re.IGNORECASE)
-                #     explain_query = re.sub(r'JOIN\s+cur\.', 'JOIN dev.public.', explain_query, flags=re.IGNORECASE)
+                # DIALECT가 postgresql인 경우에만 cur. -> dev.public. 으로 변경
+                if self.builder.dialect.lower() == "postgresql":
+                    explain_query = re.sub(r'FROM\s+cur\.', 'FROM dev.public.', explain_query, flags=re.IGNORECASE)
+                    explain_query = re.sub(r'JOIN\s+cur\.', 'JOIN dev.public.', explain_query, flags=re.IGNORECASE)
                 
                 with self.builder.Session() as session:
                     result = session.execute(text(explain_query))
@@ -324,10 +327,10 @@ class Text2SqlHandler:
         query_state = copy.deepcopy(state["query_state"])
         query = query_state["query"]
         
-        # # DIALECT가 postgresql인 경우에만 cur. -> dev.public. 으로 변경
-        # if self.builder.dialect.lower() == "postgresql":
-        #     query = re.sub(r'FROM\s+cur\.', 'FROM dev.public.', query, flags=re.IGNORECASE)
-        #     query = re.sub(r'JOIN\s+cur\.', 'JOIN dev.public.', query, flags=re.IGNORECASE)
+        # DIALECT가 postgresql인 경우에만 cur. -> dev.public. 으로 변경
+        if self.builder.dialect.lower() == "postgresql":
+            query = re.sub(r'FROM\s+cur\.', 'FROM dev.public.', query, flags=re.IGNORECASE)
+            query = re.sub(r'JOIN\s+cur\.', 'JOIN dev.public.', query, flags=re.IGNORECASE)
         
         try:
             with self.builder.Session() as session:
