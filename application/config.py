@@ -1,5 +1,4 @@
 import os
-import boto3
 from dotenv import load_dotenv
 
 load_dotenv("./.env")
@@ -23,23 +22,16 @@ DATABASE_NAME = os.getenv("DATABASE_NAME", "")
 if DIALECT == "amazon_athena":    
     ATHENA_REGION = os.getenv("ATHENA_REGION", "us-east-1")
     ATHENA_RESULTS_S3_BUCKET = os.getenv("ATHENA_RESULTS_S3_BUCKET", "")
-    DATABASE_CONNECTION_STRING = f"awsathena+rest://@athena.{ATHENA_REGION}.amazonaws.com:443/{DATABASE_NAME}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}"
+    DATABASE_PORT = os.getenv("DATABASE_PORT", "443")
+    DATABASE_CONNECTION_STRING = f"awsathena+rest://@athena.{ATHENA_REGION}.amazonaws.com:{DATABASE_PORT}/{DATABASE_NAME}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}"
 
-elif DIALECT == "postgres": # redshift
+elif DIALECT == "postgresql": # redshift
     REDSHIFT_REGION = os.getenv("REDSHIFT_REGION", "us-east-1")
-    REDSHIFT_WORKGROUP_NAME = os.getenv("REDSHIFT_WORKGROUP_NAME", "")
-    
-    redshift_client = boto3.client('redshift-serverless', region_name=REDSHIFT_REGION)
-    credentials = redshift_client.get_credentials(
-        dbName=DATABASE_NAME,
-        workgroupName=REDSHIFT_WORKGROUP_NAME,
-        durationSeconds=3600
-    )
-    DATABASE_ENDPOINT = credentials['endpoint']
-    DATABASE_PORT = credentials['port']
-    DATABASE_USERNAME = credentials['dbUser']
-    DATABASE_PASSWORD = credentials['dbPassword']
-    DATABASE_CONNECTION_STRING = f"postgresql://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_ENDPOINT}:{DATABASE_PORT}/{DATABASE_NAME}"
+    DATABASE_USERNAME=os.getenv("DATABASE_USERNAME", "admin")
+    DATABASE_PASSWORD=os.getenv("DATABASE_PASSWORD", "")
+    DATABASE_HOST=os.getenv("DATABASE_HOST", "")
+    DATABASE_PORT=os.getenv("DATABASE_PORT", "5439")
+    DATABASE_CONNECTION_STRING = f"postgresql+psycopg2://{DATABASE_USERNAME}:{DATABASE_PASSWORD}@{DATABASE_HOST}:{DATABASE_PORT}/{DATABASE_NAME}?sslmode=require"
 
 else: # other db engines
     DATABASE_USERNAME=os.getenv("DATABASE_USERNAME", "")

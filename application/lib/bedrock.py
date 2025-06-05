@@ -1,8 +1,7 @@
 import boto3
 from botocore.config import Config
 from botocore.exceptions import ClientError
-from typing import List, Dict, Any, Union
-from langchain import ChatBedrock
+from typing import List, Dict, Any
 from langfuse.decorators import observe, langfuse_context
 
 class BedrockClient:
