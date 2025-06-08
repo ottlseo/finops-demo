@@ -1,10 +1,11 @@
-import * as cdk from 'aws-cdk-lib';
+import { Stack, StackProps, Fn } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
+import * as cdk from 'aws-cdk-lib';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as sagemaker from 'aws-cdk-lib/aws-sagemaker';
 
-export class SagemakerNotebookStack extends cdk.Stack {
-  constructor(scope: Construct, id: string, props?: cdk.StackProps) {
+export class SagemakerNotebookStack extends Stack {
+  constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     // IAM Role
@@ -29,5 +30,12 @@ export class SagemakerNotebookStack extends cdk.Stack {
       notebookInstanceName: 'finops-notebook-instance',
       volumeSizeInGb: 50,
     });
+
+    new cdk.CfnOutput(this, 'SagemakerNotebookInstance', {
+      value: `${cfnNotebookInstance.notebookInstanceName}`,
+      description: 'The name of SageMaker Notebook instance',
+      exportName: 'SagemakerNotebookInstance',
+    });
   }
+
 }

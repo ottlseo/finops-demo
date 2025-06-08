@@ -1,4 +1,4 @@
-import { Stack, StackProps, RemovalPolicy, aws_s3 as s3, Fn } from 'aws-cdk-lib';
+import { Stack, StackProps, Fn } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
@@ -119,10 +119,10 @@ export class EC2Stack extends Stack {
       userData: userData,
     });
 
-    new cdk.CfnOutput(this, 'chatbotAppUrl', {
+    new cdk.CfnOutput(this, 'ChatbotAppUrl', {
       value: `http://${chatbotAppInstance.instancePublicIp}/`,
-      description: 'The URL of AWS FinOps Chatbot instance',
-      exportName: 'chatbotAppUrl',
+      description: 'The URL of AWS FinOps Chatbot instance - Please wait for 5 minutes from now',
+      exportName: 'ChatbotAppUrl',
     });
   }
 }

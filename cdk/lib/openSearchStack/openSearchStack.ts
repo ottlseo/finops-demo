@@ -127,17 +127,17 @@ export class OpensearchStack extends Stack {
 
     new cdk.CfnOutput(this, "OpensearchDomainEndpoint", {
       value: domain.domainEndpoint,
-      description: "OpenSearch Domain Endpoint",
+      description: "OpenSearchDomainEndpoint",
     });
 
-    new cdk.CfnOutput(this, "parameter store user id", {
+    new cdk.CfnOutput(this, "ParameterStoreUserID", {
       value: user_id_pm.parameterArn,
-      description: "parameter store user id",
+      description: "ParameterStoreUserID",
     });
 
-    new cdk.CfnOutput(this, "secrets manager user pw", {
+    new cdk.CfnOutput(this, "SecretsManagerUserPassword", {
       value: secret.secretName,
-      description: "secrets manager user pw",
+      description: "SecretsManagerUserPassword",
     });
     
     new cdk.CfnOutput(this, 'DomainArn', {
