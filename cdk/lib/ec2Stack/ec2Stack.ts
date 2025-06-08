@@ -55,7 +55,7 @@ export class EC2Stack extends Stack {
 
     // set AMI
     const machineImage = ec2.MachineImage.fromSsmParameter(
-      '/aws/service/canonical/ubuntu/server/focal/stable/current/amd64/hvm/ebs-gp2/ami-id'
+      '/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id'
     );
     
     // Get OpenSearch domain endpoint from SSM Parameter Store
