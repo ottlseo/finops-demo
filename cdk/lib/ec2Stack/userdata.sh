@@ -9,6 +9,13 @@ sudo apt-get install -y git
 sudo apt-get install -y python3-pip
 sudo apt-get install -y python3-venv
 sudo apt-get install -y jq
+sudo apt-get install -y unzip
+
+# Install AWS CLI v2
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
+rm -rf aws awscliv2.zip
 
 # Clone repository
 cd /home/ubuntu
@@ -33,6 +40,7 @@ After=network.target
 [Service]
 User=ubuntu
 Environment='AWS_DEFAULT_REGION=us-west-2'
+EnvironmentFile=/home/ubuntu/finops-demo/application/.env
 WorkingDirectory=/home/ubuntu/finops-demo/application
 ExecStartPre=/bin/bash -c 'sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8501'
 ExecStart=/bin/bash -c 'source /home/ubuntu/my_env/bin/activate && streamlit run app.py --server.port 8501'

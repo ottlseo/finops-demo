@@ -58,50 +58,14 @@ export class EC2Stack extends Stack {
       '/aws/service/canonical/ubuntu/server/jammy/stable/current/amd64/hvm/ebs-gp2/ami-id'
     );
     
-    // Get OpenSearch domain endpoint from SSM Parameter Store
-    const opensearchDomainEndpoint = ssm.StringParameter.fromStringParameterName(
-      this,
-      'OpensearchDomainEndpoint',
-      'opensearch_domain_endpoint'
-    );
-    
-    // Get OpenSearch user ID from SSM Parameter Store
-    const opensearchUserId = ssm.StringParameter.fromStringParameterName(
-      this,
-      'OpensearchUserId',
-      'opensearch_user_id'
-    );
-    
-    // Get OpenSearch user password from Secrets Manager
-    const opensearchUserPassword = secretsmanager.Secret.fromSecretNameV2(
-      this,
-      'OpensearchUserPassword',
-      'opensearch_user_password'
-    );
-    
     // set User Data
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync(path.join(__dirname, 'userdata.sh'), 'utf8');
     userData.addCommands(userDataScript);
     
-    // Add commands to create .env file with OpenSearch values
-    userData.addCommands(
-      'mkdir -p /home/ubuntu/finops-demo/application',
-      'cat > /home/ubuntu/finops-demo/application/.env << EOF',
-      '',
-      'REGION=us-west-2',
-      '',
-      'SONNET=anthropic.claude-3-5-sonnet-20241022-v2:0',
-      'HAIKU=anthropic.claude-3-haiku-20240307-v1:0',
-      'NOVA_PRO=amazon.nova-pro-v1:0',
-      '',
-      'TABLE_DESCRIPTION_INDEX=schema_description',
-      'EXAMPLE_QUERIES_INDEX=sample_queries',
-      '',
-      'DIALECT=amazon_athena',
-      'EOF',
-      'chown ubuntu:ubuntu /home/ubuntu/finops-demo/application/.env'
-    );
+    // Add env.sh script to create .env file with OpenSearch values
+    const envScript = fs.readFileSync(path.join(__dirname, 'env.sh'), 'utf8');
+    userData.addCommands(envScript);
     
     // EC2 instance
     const chatbotAppInstance = new ec2.Instance(this, 'chatbotAppInstance', {

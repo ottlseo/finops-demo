@@ -43,9 +43,10 @@ SONNET = os.getenv("SONNET", "anthropic.claude-3-5-sonnet-20241022-v2:0")
 HAIKU = os.getenv("HAIKU", "anthropic.claude-3-haiku-20240307-v1:0")
 NOVA_PRO = os.getenv("NOVA_PRO", "amazon.nova-pro-v1:0")
 
-OPENSEARCH_DOMAIN_ENDPOINT = get_ssm_parameter("opensearch_domain_endpoint", default_value="") # os.getenv("OPENSEARCH_DOMAIN_ENDPOINT", "")
-OPENSEARCH_USER_ID = get_ssm_parameter("opensearch_user_id", default_value="raguser") # os.getenv("OPENSEARCH_USER_ID", "")
-OPENSEARCH_USER_PASSWORD = get_secret("opensearch_user_password", default_value="MarsEarth1!") # os.getenv("OPENSEARCH_USER_PASSWORD", "")
+# 환경 변수를 우선적으로 사용하고, 없을 경우에만 SSM과 Secrets Manager에서 값을 가져옴
+OPENSEARCH_DOMAIN_ENDPOINT = os.getenv("OPENSEARCH_DOMAIN_ENDPOINT") or get_ssm_parameter("opensearch_domain_endpoint", default_value="")
+OPENSEARCH_USER_ID = os.getenv("OPENSEARCH_USER_ID") or get_ssm_parameter("opensearch_user_id", default_value="raguser")
+OPENSEARCH_USER_PASSWORD = os.getenv("OPENSEARCH_USER_PASSWORD") or get_secret("opensearch_user_password", default_value="MarsEarth1!")
 
 TABLE_DESCRIPTION_INDEX = os.getenv("TABLE_DESCRIPTION_INDEX", "schema_description")
 EXAMPLE_QUERIES_INDEX = os.getenv("EXAMPLE_QUERIES_INDEX", "sample_queries")
