@@ -69,6 +69,16 @@ export class EC2Stack extends Stack {
     
     // Add commands to create .env file with OpenSearch values
     userData.addCommands(
+      'OPENSEARCH_DOMAIN_ENDPOINT=$(aws ssm get-parameter --name opensearch_domain_endpoint --query "Parameter.Value" --output text --region us-west-2 || echo "")',
+      'OPENSEARCH_DOMAIN_ENDPOINT="https://$OPENSEARCH_DOMAIN_ENDPOINT"',
+      'OPENSEARCH_USER_ID=$(aws ssm get-parameter --name opensearch_user_id --query "Parameter.Value" --output text --region us-west-2 || echo "raguser")',
+      'OPENSEARCH_USER_PASSWORD=$(aws secretsmanager get-secret-value --secret-id opensearch_user_password --query "SecretString" --output text --region us-west-2 | jq -r .pwkey || echo "MarsEarth1!")',
+      '',
+      'DATABASE_NAME=$(aws ssm get-parameter --name database_name --query "Parameter.Value" --output text --region us-west-2 || echo "cur")',
+      'ATHENA_REGION=$(aws ssm get-parameter --name athena_region --query "Parameter.Value" --output text --region us-west-2 || echo "us-east-1")',
+      'ATHENA_RESULTS_S3_BUCKET=$(aws ssm get-parameter --name athena_results_s3_bucket --query "Parameter.Value" --output text --region us-west-2 || echo "")',
+      'DATABASE_PORT=$(aws ssm get-parameter --name database_port --query "Parameter.Value" --output text --region us-west-2 || echo "443")',
+      '',
       'mkdir -p /home/ubuntu/finops-demo/application',
       'cat > /home/ubuntu/finops-demo/application/.env << EOF',
       '',
@@ -78,10 +88,19 @@ export class EC2Stack extends Stack {
       'HAIKU=anthropic.claude-3-haiku-20240307-v1:0',
       'NOVA_PRO=amazon.nova-pro-v1:0',
       '',
+      'OPENSEARCH_DOMAIN_ENDPOINT=${OPENSEARCH_DOMAIN_ENDPOINT}',
+      'OPENSEARCH_USER_ID=${OPENSEARCH_USER_ID}',
+      'OPENSEARCH_USER_PASSWORD=${OPENSEARCH_USER_PASSWORD}',
+      '',
       'TABLE_DESCRIPTION_INDEX=schema_description',
       'EXAMPLE_QUERIES_INDEX=sample_queries',
       '',
       'DIALECT=amazon_athena',
+      'DATABASE_NAME=${DATABASE_NAME}',
+      'ATHENA_REGION=${ATHENA_REGION}',
+      'ATHENA_RESULTS_S3_BUCKET=${ATHENA_RESULTS_S3_BUCKET}',
+      'DATABASE_PORT=${DATABASE_PORT}',
+      '',
       'EOF',
       'chown ubuntu:ubuntu /home/ubuntu/finops-demo/application/.env'
     );

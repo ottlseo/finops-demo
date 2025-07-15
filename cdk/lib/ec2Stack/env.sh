@@ -6,9 +6,7 @@ export AWS_DEFAULT_REGION=us-west-2
 # OpenSearch 관련 정보 가져오기
 OPENSEARCH_DOMAIN_ENDPOINT=$(aws ssm get-parameter --name opensearch_domain_endpoint --query "Parameter.Value" --output text --region us-west-2 || echo "")
 OPENSEARCH_DOMAIN_ENDPOINT="https://$OPENSEARCH_DOMAIN_ENDPOINT"
-
 OPENSEARCH_USER_ID=$(aws ssm get-parameter --name opensearch_user_id --query "Parameter.Value" --output text --region us-west-2 || echo "raguser")
-
 OPENSEARCH_USER_PASSWORD=$(aws secretsmanager get-secret-value --secret-id opensearch_user_password --query "SecretString" --output text --region us-west-2 | jq -r .pwkey || echo "MarsEarth1!")
 
 # .env 파일 생성

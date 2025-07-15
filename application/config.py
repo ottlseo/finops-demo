@@ -54,10 +54,10 @@ EXAMPLE_QUERIES_INDEX = os.getenv("EXAMPLE_QUERIES_INDEX", "sample_queries")
 DIALECT = os.getenv("DIALECT", "")
 
 if DIALECT == "amazon_athena":    
-    DATABASE_NAME = get_ssm_parameter("database_name", default_value="cur") # os.getenv("DATABASE_NAME", "")
-    ATHENA_REGION = get_ssm_parameter("athena_region", default_value="us-east-1") # os.getenv("ATHENA_REGION", "")
-    ATHENA_RESULTS_S3_BUCKET = get_ssm_parameter("athena_results_s3_bucket", default_value="") # os.getenv("ATHENA_RESULTS_S3_BUCKET", "")
-    DATABASE_PORT = get_ssm_parameter("database_port", default_value="443") # os.getenv("DATABASE_PORT", "443")
+    DATABASE_NAME = os.getenv("DATABASE_NAME", "cur") # get_ssm_parameter("database_name", default_value="cur") 
+    ATHENA_REGION = os.getenv("ATHENA_REGION", "us-east-1") # get_ssm_parameter("athena_region", default_value="us-east-1") 
+    ATHENA_RESULTS_S3_BUCKET = os.getenv("ATHENA_RESULTS_S3_BUCKET", "") # get_ssm_parameter("athena_results_s3_bucket", default_value="") 
+    DATABASE_PORT = os.getenv("DATABASE_PORT", "443") # get_ssm_parameter("database_port", default_value="443") 
     DATABASE_CONNECTION_STRING = f"awsathena+rest://@athena.{ATHENA_REGION}.amazonaws.com:{DATABASE_PORT}/{DATABASE_NAME}?s3_staging_dir={ATHENA_RESULTS_S3_BUCKET}"
 
 elif DIALECT == "postgresql": # redshift
