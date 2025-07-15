@@ -27,7 +27,10 @@ sudo chown -R ubuntu:ubuntu /home/ubuntu/my_env
 source /home/ubuntu/my_env/bin/activate
 
 # Install dependencies
-cd finops-demo/application
+cd finops-demo
+sudo git checkout demo/samsung
+
+cd application
 sudo apt install -y cargo
 pip3 install -r requirements.txt
 
@@ -40,7 +43,6 @@ After=network.target
 [Service]
 User=ubuntu
 Environment='AWS_DEFAULT_REGION=us-west-2'
-EnvironmentFile=/home/ubuntu/finops-demo/application/.env
 WorkingDirectory=/home/ubuntu/finops-demo/application
 ExecStartPre=/bin/bash -c 'sudo iptables -t nat -A PREROUTING -p tcp --dport 80 -j REDIRECT --to-port 8501'
 ExecStart=/bin/bash -c 'source /home/ubuntu/my_env/bin/activate && streamlit run app.py --server.port 8501'
