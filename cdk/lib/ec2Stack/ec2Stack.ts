@@ -29,28 +29,46 @@ export class EC2Stack extends Stack {
       resources: ['*'],
     }));
 
-    // Network setting for EC2
-    const defaultVpc = ec2.Vpc.fromLookup(this, 'VPC', {
-      isDefault: true,
+    // Create a new VPC with public and private subnets
+    const vpc = new ec2.Vpc(this, 'FinOpsVPC', {
+      maxAzs: 2,
+      natGateways: 1,
+      subnetConfiguration: [
+        {
+          cidrMask: 24,
+          name: 'public',
+          subnetType: ec2.SubnetType.PUBLIC,
+        },
+        {
+          cidrMask: 24,
+          name: 'private',
+          subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+        }
+      ],
     });
 
+    // Create security group for the EC2 instance
     const chatbotAppSecurityGroup = new ec2.SecurityGroup(this, 'chatbotAppSecurityGroup', {
-      vpc: defaultVpc,
+      vpc: vpc,
+      description: 'Security group for FinOps Chatbot EC2 instance',
+      allowAllOutbound: true,
     });
+    
+    // Add inbound rules
     chatbotAppSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(80),
-      'httpIpv4',
+      'Allow HTTP access from anywhere',
     );
     chatbotAppSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(22),
-      'sshIpv4',
+      'Allow SSH access from anywhere',
     );
     chatbotAppSecurityGroup.addIngressRule(
       ec2.Peer.anyIpv4(),
       ec2.Port.tcp(8501),
-      'streamlitIpv4',
+      'Allow Streamlit access from anywhere',
     );
 
     // set AMI
@@ -62,10 +80,6 @@ export class EC2Stack extends Stack {
     const userData = ec2.UserData.forLinux();
     const userDataScript = fs.readFileSync(path.join(__dirname, 'userdata.sh'), 'utf8');
     userData.addCommands(userDataScript);
-    
-    // // Add env.sh script to create .env file with OpenSearch values
-    // const envScript = fs.readFileSync(path.join(__dirname, 'env.sh'), 'utf8');
-    // userData.addCommands(envScript);
     
     // Add commands to create .env file with OpenSearch values
     userData.addCommands(
@@ -109,16 +123,41 @@ export class EC2Stack extends Stack {
     const chatbotAppInstance = new ec2.Instance(this, 'chatbotAppInstance', {
       instanceType: new ec2.InstanceType('m5.large'),
       machineImage: machineImage,
-      vpc: defaultVpc,
+      vpc: vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PUBLIC, // Place in public subnet to get public IP
+      },
       securityGroup: chatbotAppSecurityGroup,
       role: instanceRole,
       userData: userData,
+      blockDevices: [
+        {
+          deviceName: '/dev/sda1',
+          volume: ec2.BlockDeviceVolume.ebs(30, {
+            volumeType: ec2.EbsDeviceVolumeType.GP3,
+            deleteOnTermination: true,
+          }),
+        },
+      ],
     });
 
+    // Output the EC2 instance public IP and DNS
     new cdk.CfnOutput(this, 'ChatbotAppUrl', {
       value: `http://${chatbotAppInstance.instancePublicIp}/`,
       description: 'The URL of AWS FinOps Chatbot instance - Please wait for 5 minutes from now',
       exportName: 'ChatbotAppUrl',
+    });
+    
+    new cdk.CfnOutput(this, 'ChatbotAppPublicDns', {
+      value: chatbotAppInstance.instancePublicDnsName,
+      description: 'Public DNS of the EC2 instance',
+      exportName: 'ChatbotAppPublicDns',
+    });
+    
+    new cdk.CfnOutput(this, 'VpcId', {
+      value: vpc.vpcId,
+      description: 'The ID of the VPC',
+      exportName: 'FinOpsVpcId',
     });
   }
 }
