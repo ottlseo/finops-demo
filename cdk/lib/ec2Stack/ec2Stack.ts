@@ -140,6 +140,10 @@ export class EC2Stack extends Stack {
         },
       ],
     });
+    
+    // Add required tags to the EC2 instance
+    cdk.Tags.of(chatbotAppInstance).add('GBL_CLASS_0', 'COMMON');
+    cdk.Tags.of(chatbotAppInstance).add('GBL_CLASS_1', 'Analytics');
 
     // Output the EC2 instance public IP and DNS
     new cdk.CfnOutput(this, 'ChatbotAppUrl', {
